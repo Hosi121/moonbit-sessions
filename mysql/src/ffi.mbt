@@ -34,10 +34,6 @@ extern "C" fn c_db_control(db : Database, sql : Bytes) -> Unit = "sk_mysql_contr
 
 ///|
 #borrow(db)
-extern "C" fn c_db_close_unowned(db : Database) -> Unit = "sk_mysql_close_unowned"
-
-///|
-#borrow(db)
 extern "C" fn c_db_fd(db : Database) -> Int = "sk_mysql_fd"
 
 ///|

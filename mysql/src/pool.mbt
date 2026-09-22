@@ -82,7 +82,8 @@ pub async fn Pool::new(
     )
     guard c_db_fd(db) >= 0 else { raise WorkerUnavailable }
     let fd = {
-      errdefer c_db_close_unowned(db)
+      // RawFd owns the read end even when its constructor raises.
+      errdefer c_db_close(db)
       @raw_fd.RawFd(c_db_fd(db))
     }
     let conn : Connection = {

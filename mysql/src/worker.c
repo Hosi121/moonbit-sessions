@@ -248,5 +248,3 @@ void sk_mysql_close(Database *d) {
   explicit_bzero(d->password,strlen(d->password)); free(d->password); free(d->database); free(d->ssl_ca); free(d->plugin_dir); free(d->charset); free(d->time_zone);
   pthread_mutex_destroy(&d->mutex); pthread_cond_destroy(&d->cond); free(d);
 }
-
-void sk_mysql_close_unowned(Database *d) { close(d->pipefd[0]); sk_mysql_close(d); }
