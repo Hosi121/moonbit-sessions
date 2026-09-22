@@ -271,12 +271,37 @@ async fn[P, R, M, O] Database::checkout(
   }
   // This bounds checkout, including create/recycle. It cannot preempt a driver
   // that must first drain a native operation; its cleanup remains mandatory.
-  let lease = @async.with_timeout(
-    self.checkout_timeout_ms,
-    self.acquire,
-    error=CheckoutTimeout,
-  ) catch {
-    error => if self.closed { raise Closed } else { raise error }
+  let lease = {
+    // A driver may defer cancellation while establishing/recycling a connection.
+    // with_timeout can then fail while leaving its body's returned lease behind.
+    // Keep ownership here until the timeout scope itself has returned successfully.
+    let acquired : Ref[Lease[P, R, M, O]?] = { val: None, }
+    let mut primary : Error? = None
+    errdefer @async.protect_from_cancel(async fn() {
+      if acquired.val is Some(lease) {
+        (lease.release)(true) catch {
+          error => raise CleanupFailed(primary, error)
+        }
+      }
+    })
+    @async.with_timeout(
+      self.checkout_timeout_ms,
+      async fn() {
+        let lease = (self.acquire)()
+        acquired.val = Some(lease)
+        lease
+      },
+      error=CheckoutTimeout,
+    ) catch {
+      error => {
+        primary = Some(error)
+        if self.closed {
+          raise Closed
+        } else {
+          raise error
+        }
+      }
+    }
   }
   if self.closed {
     @async.protect_from_cancel(async fn() { (lease.release)(true) })

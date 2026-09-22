@@ -144,3 +144,70 @@ async test "admission permits bound a source with no pool and survive cancellati
   ignore(db.query("next"))
   assert_eq(events, ["acquire", "release", "acquire", "query:next", "release"])
 }
+
+///|
+async test "checkout timeout retires a connection returned after protected acquisition" {
+  let events = []
+  let db = database(
+    acquire=async fn() {
+      @async.protect_from_cancel(async fn() {
+        @async.sleep(50)
+        events.push("acquired")
+        Probe::{ events, }
+      })
+    },
+    release=fn(_, discard) {
+      events.push(if discard { "discard" } else { "release" })
+    },
+    close=fn() { () },
+    max_leases=1,
+    checkout_timeout_ms=10,
+  )
+  defer db.close()
+  assert_true(
+    try db.query("never") catch {
+      @sql.CheckoutTimeout => true
+      error => raise error
+    } noraise {
+      _ => false
+    },
+  )
+  assert_eq(events, ["acquired", "discard"])
+  assert_eq(db.status().acquiring, 0)
+  assert_eq(db.status().leased, 0)
+  // A second attempt reaches the source again, proving its permit was returned.
+  ignore(
+    db.query("never") catch {
+      @sql.CheckoutTimeout => []
+      error => raise error
+    },
+  )
+  assert_eq(events, ["acquired", "discard", "acquired", "discard"])
+}
+
+///|
+async test "caller cancellation retires a late acquisition before returning" {
+  let events = []
+  let db = database(
+    acquire=async fn() {
+      @async.protect_from_cancel(async fn() {
+        @async.sleep(50)
+        events.push("acquired")
+        Probe::{ events, }
+      })
+    },
+    release=fn(_, discard) {
+      events.push(if discard { "discard" } else { "release" })
+    },
+    close=fn() { () },
+    max_leases=1,
+  )
+  defer db.close()
+  assert_eq(
+    @async.with_timeout_opt(10, async fn() { ignore(db.query("never")) }),
+    None,
+  )
+  assert_eq(events, ["acquired", "discard"])
+  ignore(db.query("next"))
+  assert_eq(events, ["acquired", "discard", "acquired", "query:next", "release"])
+}

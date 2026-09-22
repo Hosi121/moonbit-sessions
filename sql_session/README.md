@@ -40,6 +40,11 @@ their actual connection capacity. At most `max_leases + max_waiters` requests
 are admitted across acquisition and active scopes. There is no second pool or
 connection queue here; acquisition remains the driver's responsibility.
 
+If cancellation-protected acquisition returns a connection after its deadline,
+the timeout scope retains ownership and retires that connection before raising.
+The same rule applies to caller cancellation during acquisition. A late result
+cannot leak a lease or permanently consume an admission permit.
+
 Timeouts bound how long a caller waits before cancellation is requested; they do
 not guarantee immediate preemption of native work. All shipped adapters drain
 submitted operations. Transaction callback cancellation then rolls back before

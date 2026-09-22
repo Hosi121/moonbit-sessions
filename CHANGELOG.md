@@ -10,6 +10,9 @@
   types. Verify the shared lifetime suite against moonpostgres/PostgreSQL 17.
 - Add separate query/execute dispatch. Combined `run` is an explicit optional
   capability; a separate executor raises `CombinedResultUnavailable`.
+- Retire a connection when cancellation-protected acquisition returns after
+  its deadline or caller cancellation. Ownership transfers only after the
+  enclosing timeout scope succeeds; the admission permit is restored on failure.
 - Update the MySQL adapter to `Hosi121/mysql@0.3.0` for the new module path and
   executor interface. Its C worker/protocol semantics are unchanged.
 - Package `Hosi121/ws_session@0.1.0` independently of all database modules.
