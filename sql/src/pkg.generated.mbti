@@ -1,0 +1,68 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "hosi121/sql"
+
+// Values
+pub fn column_index(Array[String], String) -> Int raise
+
+// Errors
+pub(all) suberror SqlError {
+  Closed
+  Saturated
+  CheckoutTimeout
+  InvalidConfig(String)
+  SessionReleased
+  SessionFailed
+  OperationInProgress
+  CommitOutcomeUnknown(Error)
+  CleanupFailed(Error?, Error)
+  AmbiguousColumn(String)
+  ColumnNotFound(String)
+}
+
+// Types and methods
+pub struct Database[P, R, M, O] {
+  // private fields
+}
+pub fn[P, R, M, O] Database::close(Self[P, R, M, O]) -> Unit
+pub async fn[P, R, M, O] Database::close_and_wait(Self[P, R, M, O]) -> Unit
+pub async fn[P, R, M, O] Database::execute(Self[P, R, M, O], String, params? : Array[P]) -> M
+pub fn[C, P, R, M, O] Database::new(Driver[C, P, R, M, O], max_leases~ : Int, max_waiters? : Int, checkout_timeout_ms? : Int) -> Self[P, R, M, O] raise
+pub async fn[P, R, M, O] Database::query(Self[P, R, M, O], String, params? : Array[P]) -> Array[R]
+pub async fn[P, R, M, O] Database::run(Self[P, R, M, O], String, params? : Array[P]) -> Response[R, M]
+pub fn[P, R, M, O] Database::status(Self[P, R, M, O]) -> Status
+pub async fn[P, R, M, O, T] Database::with_session(Self[P, R, M, O], async (Session[P, R, M]) -> T) -> T
+pub async fn[P, R, M, O, T] Database::with_transaction(Self[P, R, M, O], O, async (Session[P, R, M]) -> T) -> T
+
+pub(all) struct Driver[C, P, R, M, O] {
+  acquire : async () -> C
+  release : async (C, Bool) -> Unit
+  close : () -> Unit
+  run : async (C, String, Array[P]) -> Response[R, M]
+  begin : async (C, O) -> Unit
+  commit : async (C) -> Unit
+  rollback : async (C) -> Unit
+}
+
+pub(all) struct Response[R, M] {
+  rows : Array[R]
+  metadata : M
+}
+
+pub struct Session[P, R, M] {
+  // private fields
+}
+pub async fn[P, R, M] Session::execute(Self[P, R, M], String, params? : Array[P]) -> M
+pub async fn[P, R, M] Session::query(Self[P, R, M], String, params? : Array[P]) -> Array[R]
+pub async fn[P, R, M] Session::run(Self[P, R, M], String, params? : Array[P]) -> Response[R, M]
+
+pub struct Status {
+  leased : Int
+  acquiring : Int
+  max_leases : Int
+  max_waiters : Int
+  closed : Bool
+}
+
+// Type aliases
+
+// Traits

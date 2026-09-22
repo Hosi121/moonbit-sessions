@@ -16,8 +16,17 @@ jobs:
           MYSQL_ROOT_PASSWORD: local-root-test-only
         ports: ['3310:3306']
         options: --health-cmd="mysqladmin ping -h localhost" --health-interval=2s --health-timeout=2s --health-retries=30
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: servicekit_test
+          POSTGRES_USER: servicekit
+          POSTGRES_PASSWORD: local-test-only
+        ports: ['5433:5432']
+        options: --health-cmd="pg_isready -U servicekit -d servicekit_test" --health-interval=2s --health-timeout=2s --health-retries=30
     env:
       SERVICEKIT_TEST_DATABASE_URL: mysql://servicekit:local-test-only@127.0.0.1:3310/servicekit_test
+      SERVICEKIT_TEST_POSTGRES_URL: postgres://servicekit:local-test-only@127.0.0.1:5433/servicekit_test
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-node@v7.0.0
@@ -29,4 +38,4 @@ jobs:
       - run: git diff --exit-code
       - run: npm test
       - run: npm run test:consumer
-      - run: npm run test:mysql
+      - run: npm run test:databases

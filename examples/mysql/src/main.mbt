@@ -9,6 +9,10 @@ fn setting(name : String) -> String raise {
 async fn pool(
   max_rows? : Int = 10000,
   max_bytes? : Int = 16777216,
+  max_waiters? : Int = 128,
+  checkout_timeout_ms? : Int = 5000,
+  found_rows? : Bool = true,
+  time_zone? : String = "+00:00",
 ) -> @mysql.Pool {
   @mysql.Pool::new(
     host=setting("HOST"),
@@ -20,11 +24,15 @@ async fn pool(
     plugin_dir=@env.get_env_var("MYSQL_PLUGIN_DIR").unwrap_or(""),
     max_rows~,
     max_bytes~,
+    max_waiters~,
+    checkout_timeout_ms~,
+    found_rows~,
+    time_zone~,
   )
 }
 
 ///|
-async fn main {
+async fn verify() -> Unit {
   let a = pool()
   defer a.close()
   let b = pool()
@@ -56,6 +64,7 @@ async fn main {
   assert_eq(row.get("text_value"), Some(@mysql.Text("日本語\u0000text")))
   assert_eq(row.get("null_value"), Some(@mysql.Null))
   // This table exists only in the explicitly configured isolated test DB.
+  ignore(a.query("DROP TABLE IF EXISTS servicekit_contract"))
   ignore(
     a.query(
       "CREATE TABLE servicekit_contract (id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT, value VARCHAR(100) NOT NULL UNIQUE)",
@@ -93,6 +102,29 @@ async fn main {
     @mysql.statement("SELECT COUNT(*) AS n FROM servicekit_contract"),
   ])
   assert_eq(committed.rows[0].get("n"), Some(@mysql.Integer(2L)))
+  assert_eq(
+    a
+    .database()
+    .execute("UPDATE servicekit_contract SET value=value WHERE id=1").affected_rows,
+    1UL,
+  )
+  let changed = pool(found_rows=false, time_zone="+09:00")
+  defer changed.close()
+  assert_eq(
+    changed
+    .database()
+    .execute("UPDATE servicekit_contract SET value=value WHERE id=1").affected_rows,
+    0UL,
+  )
+  assert_eq(
+    changed.query("SELECT @@session.time_zone AS zone").rows[0].get("zone"),
+    Some(@mysql.Text("+09:00")),
+  )
+  // This second lease has passed through reset/reinitialization.
+  assert_eq(
+    changed.query("SELECT @@session.time_zone AS zone").rows[0].get("zone"),
+    Some(@mysql.Text("+09:00")),
+  )
   assert_true(
     try a.query("SELECT ?", params=[]) catch {
       @mysql.InvalidParameter => true
@@ -158,16 +190,22 @@ async fn main {
       a.query("SELECT SLEEP(0.2)")
     })
     ready.get()
+    while a.database().status().leased == 0 {
+      @async.pause()
+    }
     let queued = group.spawn(async fn() {
       ready.put(())
       try a.query("SELECT 'must not run'") catch {
-        @mysql.Closed => true
+        @sql.Closed => true
         error => raise error
       } noraise {
         _ => false
       }
     })
     ready.get()
+    while a.database().status().acquiring == 0 {
+      @async.pause()
+    }
     a.close()
     a.close()
     assert_true(queued.wait())
@@ -175,12 +213,54 @@ async fn main {
   })
   assert_true(
     try a.query("SELECT 1") catch {
-      @mysql.Closed => true
+      @sql.Closed => true
       error => raise error
     } noraise {
       _ => false
     },
   )
   ignore(b.query("DROP TABLE servicekit_contract"))
+  let shared = pool(max_waiters=1, checkout_timeout_ms=100)
+  defer shared.close()
+  @contract.run(shared.database(), {
+    name: "MySQL",
+    options: @mysql.TransactionOptions::new(isolation=@mysql.ReadCommitted),
+    read_only: @mysql.TransactionOptions::new(read_only=true),
+    insert: "INSERT INTO servicekit_shared(id, value) VALUES (?, ?)",
+    params: (id, value) => [@mysql.Integer(id.to_int64()), @mysql.Text(value)],
+    number: fn(row, name) raise {
+      match row.get(name) {
+        Some(@mysql.Integer(n)) => n
+        Some(@mysql.Unsigned(n)) => n.reinterpret_as_int64()
+        _ => fail("Expected integer column")
+      }
+    },
+    duplicate: fn(row) raise {
+      assert_eq(row.get_at(0), Some(@mysql.Integer(1L)))
+      assert_eq(row.get_at(1), Some(@mysql.Integer(2L)))
+      assert_true(
+        try row.get("duplicate") catch {
+          @sql.AmbiguousColumn("duplicate") => true
+          error => raise error
+        } noraise {
+          _ => false
+        },
+      )
+    },
+    constraint_error: error => error is @mysql.ServerError(1062),
+    read_only_error: error => error is @mysql.ServerError(1792),
+    connection_id: "SELECT CONNECTION_ID() AS n",
+    slow: "SELECT SLEEP(0.2)",
+    set_session: "SET @servicekit_borrower = 123",
+    check_session: "SELECT (@servicekit_borrower IS NULL) AS n",
+  })
   println("servicekit MySQL contract passed")
+}
+
+///|
+async fn main {
+  verify() catch {
+    @mysql.ServerError(code) => fail("Unexpected MySQL server error: \{code}")
+    error => raise error
+  }
 }

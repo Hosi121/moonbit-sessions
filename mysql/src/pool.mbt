@@ -1,74 +1,18 @@
 ///|
-pub(all) suberror DatabaseError {
-  Closed
-  InvalidConfig(String)
-  InvalidParameter
-  ServerError(Int)
-  CompletionLost
-  WorkerUnavailable
-  ResultTooLarge
-}
-
-///|
-/// Integers, decimals and binary data never round-trip through Double/JSON.
-pub(all) enum Value {
-  Null
-  Text(String)
-  Integer(Int64)
-  Unsigned(UInt64)
-  Float(Double)
-  Decimal(String)
-  Blob(Bytes)
-} derive(Eq, Debug)
-
-///|
-pub(all) struct Statement {
-  sql : String
-  params : Array[Value]
-}
-
-///|
-pub fn statement(sql : String, params? : Array[Value] = []) -> Statement {
-  { sql, params, }
-}
-
-///|
-pub struct Row {
-  values : Map[String, Value]
-}
-
-///|
-pub fn Row::get(self : Row, name : String) -> Value? {
-  self.values.get(name)
-}
-
-///|
-pub struct QueryResult {
-  rows : Array[Row]
-  has_rows : Bool
-  affected_rows : UInt64
-  insert_id : UInt64
-}
-
-///|
-priv struct Connection {
-  db : Database
-  fd : @raw_fd.RawFd
-  mut busy : Bool
+priv struct Workers {
+  available : @async.Queue[Connection]
+  connections : Array[Connection]
   mut closed : Bool
 }
 
 ///|
-/// Use on one async event loop. Every instance owns its workers and queue.
 pub struct Pool {
-  priv available : @async.Queue[Connection]
-  priv connections : Array[Connection]
-  priv mut closed : Bool
+  priv sql : @sql.Database[Value, Row, Command, TransactionOptions]
 }
 
 ///|
-/// Connections are established lazily on foreign workers, never on this loop.
-/// Empty ssl_ca leaves Connector/C's default TLS policy in effect.
+/// Physical connections are established on foreign workers. charset, time_zone
+/// and CLIENT_FOUND_ROWS are explicit MySQL policies, reapplied after recycling.
 pub async fn Pool::new(
   host~ : String,
   user~ : String,
@@ -81,6 +25,11 @@ pub async fn Pool::new(
   timeout_seconds? : Int = 5,
   max_rows? : Int = 10000,
   max_bytes? : Int = 16777216,
+  max_waiters? : Int = 128,
+  checkout_timeout_ms? : Int = 5000,
+  charset? : String = "utf8mb4",
+  time_zone? : String = "+00:00",
+  found_rows? : Bool = true,
 ) -> Pool {
   guard size > 0 &&
     size <= 128 &&
@@ -97,17 +46,24 @@ pub async fn Pool::new(
     !database.is_empty() &&
     [host, user, password, database, ssl_ca, plugin_dir].all(s => {
       !s.contains("\u0000")
+    }) &&
+    (charset == "utf8mb4" || charset == "utf8mb3" || charset == "utf8") &&
+    time_zone.length() > 0 &&
+    time_zone.length() <= 64 &&
+    time_zone
+    .iter()
+    .all(c => {
+      c
+      is ('a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '/' | ':' | '+' | '-' | '.')
     }) else {
     raise InvalidConfig("Invalid connection settings")
   }
-  let available = @async.Queue(kind=Unbounded)
-  let connections : Array[Connection] = []
-  let mut ready = false
-  defer (if !ready {
-    for connection in connections {
-      connection.close()
-    }
-  })
+  let workers : Workers = {
+    available: @async.Queue(kind=Unbounded),
+    connections: [],
+    closed: false,
+  }
+  errdefer workers.close()
   for _ in 0..<size {
     let db = c_db_new(
       @utf8.encode(host),
@@ -120,169 +76,139 @@ pub async fn Pool::new(
       timeout_seconds,
       max_rows,
       max_bytes,
+      @utf8.encode(charset),
+      @utf8.encode(time_zone),
+      found_rows,
     )
     guard c_db_fd(db) >= 0 else { raise WorkerUnavailable }
     let fd = {
-      errdefer c_db_close(db)
+      errdefer c_db_close_unowned(db)
       @raw_fd.RawFd(c_db_fd(db))
     }
-    let connection = { db, fd, busy: false, closed: false, }
-    ignore(available.try_put(connection) catch { _ => false })
-    connections.push(connection)
+    let conn : Connection = {
+      db,
+      fd,
+      leased: false,
+      closed: false,
+      broken: false,
+    }
+    workers.connections.push(conn)
+    ignore(workers.available.try_put(conn) catch { _ => false })
   }
-  ready = true
-  { available, connections, closed: false, }
+  let sql = @sql.Database::new(
+    {
+      acquire: async fn() {
+        let conn = workers.available.get()
+        conn.leased = true
+        conn
+      },
+      close: fn() { workers.close() },
+      release: async fn(conn, discard) {
+        defer {
+          conn.leased = false
+          if conn.broken {
+            workers.close()
+          }
+          if workers.closed {
+            conn.close()
+          } else {
+            ignore(workers.available.try_put(conn) catch { _ => false })
+          }
+        }
+        if !workers.closed {
+          conn.recycle(discard)
+        }
+      },
+      run: async fn(conn, sql, params) { conn.run(sql, params) },
+      begin: async fn(conn, options : TransactionOptions) {
+        if options.isolation is Some(isolation) {
+          let name = match isolation {
+            ReadUncommitted => "READ UNCOMMITTED"
+            ReadCommitted => "READ COMMITTED"
+            RepeatableRead => "REPEATABLE READ"
+            Serializable => "SERIALIZABLE"
+          }
+          conn.control("SET TRANSACTION ISOLATION LEVEL " + name)
+        }
+        let sql = match options.read_only {
+          Some(true) => "START TRANSACTION READ ONLY"
+          Some(false) => "START TRANSACTION READ WRITE"
+          None => "START TRANSACTION"
+        }
+        conn.control(sql)
+      },
+      commit: async fn(conn) { conn.control("COMMIT") },
+      rollback: async fn(conn) {
+        // A failed statement closes the physical connection in the C worker.
+        // Rollback must not establish a replacement session within this lease.
+        if c_db_connected(conn.db) {
+          conn.control("ROLLBACK")
+        }
+      },
+    },
+    max_leases=size,
+    max_waiters~,
+    checkout_timeout_ms~,
+  )
+  { sql, }
 }
 
 ///|
-fn Connection::close(self : Connection) -> Unit {
+fn Workers::close(self : Workers) -> Unit {
   if !self.closed {
     self.closed = true
-    self.fd.close()
-    c_db_close(self.db)
-  }
-}
-
-///|
-/// Reject queued/new requests immediately. In-flight work drains before its
-/// worker is freed; close is idempotent and never joins a running SQL job.
-pub fn Pool::close(self : Pool) -> Unit {
-  if !self.closed {
-    self.closed = true
-    self.available.close(error=Closed, clear=true)
-    for connection in self.connections {
-      if !connection.busy {
-        connection.close()
+    self.available.close(error=@sql.Closed, clear=true)
+    for conn in self.connections {
+      if !conn.leased {
+        conn.close()
       }
     }
   }
 }
 
 ///|
+pub fn Pool::database(
+  self : Pool,
+) -> @sql.Database[Value, Row, Command, TransactionOptions] {
+  self.sql
+}
+
+///|
+pub fn Pool::close(self : Pool) -> Unit {
+  self.sql.close()
+}
+
+///|
+/// Compatibility helper. New consumers can use database().query/execute/run.
 pub async fn Pool::query(
   self : Pool,
   sql : String,
   params? : Array[Value] = [],
 ) -> QueryResult {
-  self.run([statement(sql, params~)], false)
+  legacy_result(self.sql.run(sql, params~))
 }
 
 ///|
-/// Execute the batch on one connection, commit or roll back, and return the
-/// final statement's result. No automatic retry of possibly committed writes.
-/// DDL and session/transaction control SQL follow MySQL's own semantics.
 pub async fn Pool::transaction(
   self : Pool,
   statements : Array[Statement],
 ) -> QueryResult {
-  self.run(statements, true)
-}
-
-///|
-async fn Pool::run(
-  self : Pool,
-  statements : Array[Statement],
-  transaction : Bool,
-) -> QueryResult {
-  guard !self.closed else { raise Closed }
   guard !statements.is_empty() else { raise InvalidParameter }
-  // Validate before taking a worker. Strings may contain NUL; SQL may not.
-  for statement in statements {
-    guard !statement.sql.is_empty() && !statement.sql.contains("\u0000") else {
-      raise InvalidParameter
+  self.sql.with_transaction(TransactionOptions::new(), async fn(tx) {
+    let mut result = tx.run(statements[0].sql, params=statements[0].params)
+    for i in 1..<statements.length() {
+      result = tx.run(statements[i].sql, params=statements[i].params)
     }
-    for param in statement.params {
-      if param is Float(n) && (n.is_nan() || n.is_inf()) {
-        raise InvalidParameter
-      }
-    }
-  }
-  let conn = self.available.get()
-  guard !self.closed else { raise Closed }
-  conn.busy = true
-  @async.protect_from_cancel(async fn() {
-    let mut completed = false
-    defer {
-      conn.busy = false
-      if !completed {
-        self.close()
-      }
-      if self.closed {
-        conn.close()
-      } else {
-        ignore(self.available.try_put(conn) catch { _ => false })
-      }
-    }
-    let db = conn.db
-    c_db_reset(db, statements.length(), transaction)
-    for i, statement in statements {
-      c_db_statement(
-        db,
-        i,
-        @utf8.encode(statement.sql),
-        statement.params.length(),
-      )
-      for j, param in statement.params {
-        match param {
-          Null => c_db_param(db, i, j, 0, b"", 0)
-          Float(n) => c_db_param(db, i, j, 1, b"", n)
-          Text(s) | Decimal(s) => c_db_param(db, i, j, 2, @utf8.encode(s), 0)
-          Integer(n) => c_db_integer(db, i, j, n)
-          Unsigned(n) => c_db_unsigned(db, i, j, n)
-          Blob(data) => c_db_param(db, i, j, 3, data, 0)
-        }
-      }
-    }
-    c_db_submit(db)
-    guard conn.fd.read(FixedArray::make(1, b'\x00')) == 1 else {
-      raise CompletionLost
-    }
-    completed = true
-    let error = c_db_error(db)
-    guard error == 0 else {
-      match error {
-        -2 => raise ResultTooLarge
-        -3 => raise InvalidParameter
-        _ => raise ServerError(error)
-      }
-    }
-    let columns = Array::makei(c_db_cols(db), i => {
-      (@utf8.decode(c_db_name(db, i)), c_db_kind(db, i))
-    })
-    let rows = Array::makei(c_db_rows(db), row => {
-      let values : Map[String, Value] = Map([])
-      for col, (name, kind) in columns {
-        values[name] = if c_db_null(db, row, col) {
-          Null
-        } else {
-          let bytes = c_db_cell(db, row, col)
-          if kind == 5 {
-            Blob(bytes)
-          } else {
-            let text = @utf8.decode(bytes)
-            match kind {
-              1 => Integer(@string.parse_int64(text))
-              2 => Unsigned(@string.parse_uint64(text))
-              3 => Float(@string.parse_double(text))
-              4 => Decimal(text)
-              _ => Text(text)
-            }
-          }
-        }
-      }
-      { values, }
-    })
-    {
-      rows,
-      has_rows: !columns.is_empty(),
-      affected_rows: c_db_affected(db),
-      insert_id: c_db_insert_id(db),
-    }
+    legacy_result(result)
   })
 }
 
 ///|
-pub extend Value with Eq::{equal, not_equal}
-
-///|
-pub extend Value with @debug.Debug::{to_repr}
+fn legacy_result(result : @sql.Response[Row, Command]) -> QueryResult {
+  {
+    rows: result.rows,
+    has_rows: result.metadata.has_rows,
+    affected_rows: result.metadata.affected_rows,
+    insert_id: result.metadata.insert_id,
+  }
+}

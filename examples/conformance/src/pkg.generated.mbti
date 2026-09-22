@@ -1,0 +1,33 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "hosi121/sql_conformance"
+
+import {
+  "hosi121/sql",
+}
+
+// Values
+pub async fn[P, R, M, O] run(@sql.Database[P, R, M, O], Case[P, R, O]) -> Unit
+
+// Errors
+pub(all) suberror Abort
+
+// Types and methods
+pub(all) struct Case[P, R, O] {
+  name : String
+  options : O
+  read_only : O
+  insert : String
+  params : (Int, String) -> Array[P]
+  number : (R, String) -> Int64 raise
+  duplicate : (R) -> Unit raise
+  constraint_error : (Error) -> Bool
+  read_only_error : (Error) -> Bool
+  connection_id : String
+  slow : String
+  set_session : String
+  check_session : String
+}
+
+// Type aliases
+
+// Traits

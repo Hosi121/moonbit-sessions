@@ -1,87 +1,94 @@
 # hosi121/mysql
 
-Async MySQL access for **native MoonBit on Linux**, using one MariaDB Connector/C
-worker per pool connection. No JSON, HTTP, application schema, environment loading,
-or Node dependency is part of the API.
+Native MySQL adapter for the [shared SQL contract](../sql/README.md), using one
+MariaDB Connector/C worker per physical connection. It imports `hosi121/sql`
+and async, with no dependency on PostgreSQL, WebSocket, an application or Node.
 
-Use `"hosi121/mysql@0.1.0"` in `moon.mod` and `"hosi121/mysql" @mysql` in
-`moon.pkg`, with this directory registered in your workspace as described in the
-[repository README](../README.md). This module is not yet on Mooncakes.
+Version **0.2.0** changes rows to ordered columns/values and moves scope/admission
+errors to `hosi121/sql`. Add `vendor/servicekit/sql` and `vendor/servicekit/mysql`
+to your workspace, and import `hosi121/sql@0.1.0` / `hosi121/mysql@0.2.0` in
+`moon.mod`. These are source modules, not Mooncakes releases.
 
-The **consumer executable's** `moon.pkg` must specify its native link flags:
+The **consumer executable** needs Connector/C development files and:
 
 ```moonbit
 options(link: { "native": { "cc-link-flags": "-lmariadb -lpthread" } })
 ```
 
-The pinned moon does not propagate those flags from dependency libraries. This
-requirement is tested by building a consumer outside the repository. Install
-MariaDB Connector/C development files and a C compiler first.
+The pinned moon does not propagate executable link flags from a library.
 
-## API
-
-Inside an `async fn`:
+## API and values
 
 ```moonbit
-let db = @mysql.Pool::new(
-  host="127.0.0.1", port=3306,
-  user="app", password="password", database="app", size=4,
+let pool = @mysql.Pool::new(
+  host="127.0.0.1", user="app", password="password", database="app", size=4,
 )
+let db = pool.database()
 defer db.close()
-let result = db.query("SELECT name FROM users WHERE id=?", params=[Integer(42L)])
-for row in result.rows {
+let rows = db.query("SELECT name FROM users WHERE id=?", params=[Integer(42L)])
+for row in rows {
   if row.get("name") is Some(Text(name)) { println(name) }
 }
 ```
 
-The generated [public interface](src/pkg.generated.mbti) is the API reference.
-The [executable consumer](../examples/mysql/src/main.mbt) exercises the API against
-a real MySQL instance without depending on SpeakUp.
+`pool.database()` returns
+`@sql.Database[Value, Row, Command, TransactionOptions]`. Use
+`db.with_transaction(@mysql.TransactionOptions::new(), callback)` for an
+interactive transaction. Options expose typed isolation and optional read-only
+mode. SQL remains MySQL SQL, including DDL's implicit-commit behavior.
 
-- Parameters and columns use `Value`: `Null`, `Text(String)`, `Integer(Int64)`,
-  `Unsigned(UInt64)`, `Float(Double)`, `Decimal(String)`, `Blob(Bytes)`. Native
-  64-bit binds preserve integer precision. Decimal parameters bind as decimal
-  text. Date/time results are text; each new session uses UTC and utf8mb4.
-- `QueryResult` has `rows`, `has_rows`, `affected_rows: UInt64`, and
-  `insert_id: UInt64`. `Row.values` maps column names to values; duplicate names
-  overwrite earlier columns, so use unique SQL aliases. This is a typed SQL-value
-  boundary, not generated schema typing or an ORM.
-- Result types follow server metadata. `SELECT ?` may give a string charset even
-  for a binary parameter; use a binary column or `CAST(? AS BINARY)` for that
-  expression. Null and binary NUL bytes are preserved.
-- `transaction([statement(sql, params=...), ...])` runs on one connection,
-  commits or rolls back, and returns the **last** statement's result. There is
-  no interactive transaction callback. DDL implicit commits and manual session
-  SQL follow MySQL semantics. A later query may use a different pooled session.
-- Connector flags include `CLIENT_FOUND_ROWS`: affected rows report matched rows
-  for updates. Multi-statements and LOCAL INFILE are disabled.
+- `Value`: Null, Text(String), Integer(Int64), Unsigned(UInt64), Float(Double),
+  Decimal(String), Blob(Bytes). Native integer binds preserve all 64 bits.
+  Decimal parameters bind decimal text; date/time results are text.
+- `Row.columns` and `Row.values` are parallel, ordered arrays. `get_at(index)`
+  returns an optional value. `get(name)` returns None for a missing column and
+  raises `@sql.AmbiguousColumn` for duplicates; SQL NULL is `Some(Null)`.
+- `Command` retains `has_rows`, `affected_rows: UInt64`, `insert_id: UInt64`.
+  The default `found_rows=true` means UPDATE reports matched rows; set false for
+  changed-row semantics. These are not database-neutral insert/count semantics.
+- For binary expressions use a binary column or `CAST(? AS BINARY)`; types follow
+  server metadata. Null and embedded NUL bytes in values are preserved.
+- Legacy `Pool.query` and `Pool.transaction(Array[Statement])` remain conveniences
+  over the shared API, returning `QueryResult`; the latter returns the last
+  statement's result. Their old row-map/Closed-error behavior is not preserved.
 
-## Ownership and failure
+See [generated signatures](src/pkg.generated.mbti) and the
+[independent executable consumer](../examples/mysql/src/main.mbt).
 
-Each pool owns its workers and must be closed. Use it on one async event loop.
-Workers only touch copied malloc memory and Connector/C handles. Completion is
+## Ownership and limits
+
+Workers touch only copied malloc memory and Connector/C handles. Completion is
 observed through a pipe; no MoonBit-managed memory crosses into foreign threads.
+The application uses one async event loop and closes each database it creates.
 
-Cancellation drains an already submitted query before reusing its connection.
-It **does not cancel SQL**, and a timeout may therefore return after the SQL
-finishes. There are no automatic retries of uncertain writes. `close()` is
-idempotent: new and queued requests fail, while in-flight requests reclaim their
-workers when they complete. Finish the tasks using a pool before closing it in
-normal scope-based use.
+Each lease is reset with `mysql_reset_connection` before reuse, then its configured
+charset/timezone are reapplied. Temporary tables, user variables and unmanaged
+transactions cannot leak between borrowers. A worker keeps its physical connection
+through the whole callback, including interactive transactions. A SQL error closes
+that physical connection; the failed shared session rejects further operations
+and never silently reconnects inside a transaction.
 
-`DatabaseError` exposes `Closed`, `InvalidConfig(String)`, `InvalidParameter`,
-`ServerError(Int)`, `CompletionLost`, `WorkerUnavailable`, and `ResultTooLarge`.
-Server codes such as 1062 are not converted into HTTP status codes. Connection
-setup is lazy; configuration validation does not prove connectivity. Allocation
-failure inside the C stub currently aborts the process.
+Cancellation drains submitted work; it does not interrupt SQL. Timeout return
+can therefore be delayed. Callback cancellation rolls back before returning the
+connection. Closing rejects queued/new requests, while active leases retain their
+workers until cleanup. `db.close_and_wait()` observes completion.
 
-Defaults: 10 connections, Connector/C connect/read/write timeout 5 seconds,
-10,000 result rows, and 16 MiB total value payload. `size`, `timeout_seconds`,
-`max_rows`, and `max_bytes` are configurable. Payload limits exclude metadata
-and allocation overhead. Waiting query count is not bounded by the pool;
-applications must set their own admission limit.
+Defaults: 10 connections, 128 waiting requests, 5-second checkout and Connector/C
+connect/read/write timeouts, 10,000 result rows and 16 MiB value payload. Payload
+limits exclude metadata and allocation overhead. Allocation failure in the C stub
+currently aborts. There are no automatic retries of uncertain writes.
 
-An explicit `ssl_ca` enables required TLS and server certificate verification.
-Without it, Connector/C's default TLS policy applies. `plugin_dir` can be supplied
-for Connector/C authentication plugins. Neither option is read from environment
-variables by the library. TLS configurations are not exercised by the local tests.
+`charset` supports utf8mb4 (default), utf8mb3 or utf8, matching the Unicode text
+codec. `time_zone` defaults to `+00:00` and accepts MySQL timezone names/offsets.
+`found_rows` defaults to true. These are explicit MySQL settings, not policies
+in the shared SQL module. Multi-statements and LOCAL INFILE remain disabled.
+
+Driver errors retain `InvalidConfig`, `InvalidParameter`, `ServerError(Int)`,
+`CompletionLost`, `WorkerUnavailable` and `ResultTooLarge`. The shared module
+supplies admission/lifetime/cleanup errors and retains underlying causes. No
+HTTP status or automatic retry policy is assigned here.
+
+Connection setup is lazy. A nonempty `ssl_ca` requires TLS and certificate
+verification; otherwise Connector/C's default TLS policy applies. `plugin_dir`
+configures authentication plugins. No environment variables are loaded by the
+library, and local tests do not exercise TLS.

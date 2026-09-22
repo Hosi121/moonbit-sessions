@@ -1,4 +1,5 @@
 import {
+  "hosi121/sql",
   "moonbitlang/async",
   "moonbitlang/async/raw_fd",
   "moonbitlang/core/encoding/utf8",

@@ -1,4 +1,4 @@
-name = "hosi121/mysql_example"
+name = "hosi121/sql_conformance"
 
 version = "0.1.0"
 
@@ -8,7 +8,5 @@ preferred_target = "native"
 
 import {
   "hosi121/sql@0.1.0",
-  "hosi121/sql_conformance@0.1.0",
-  "hosi121/mysql@0.2.0",
   "moonbitlang/async@0.22.1",
 }

@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdio.h>
 
 // Foreign threads own only malloc memory and Connector/C objects. MoonBit
 // objects are copied before submission; completion is observed through a pipe.
@@ -30,8 +31,9 @@ typedef struct { char *data; unsigned long len; int null; } Cell;
 typedef struct {
   MYSQL *mysql; char *host, *user, *password, *database, *ssl_ca, *plugin_dir; unsigned port;
   unsigned timeout; int max_rows; size_t max_bytes;
+  char *charset, *time_zone; int found_rows;
   pthread_t thread; pthread_mutex_t mutex; pthread_cond_t cond;
-  int pipefd[2], pending, stopping, transaction, error;
+  int pipefd[2], pending, stopping, cleanup, error;
   Statement *statements; int statement_count;
   char **names; int *kinds; Cell *cells; int cols, rows; size_t capacity, result_size;
   uint64_t affected, insert_id;
@@ -52,6 +54,14 @@ static void clear_statements(Database *d) {
   }
   free(d->statements); d->statements=NULL; d->statement_count=0;
 }
+static int configure_session(Database *d) {
+  if (mysql_set_character_set(d->mysql, d->charset)) { d->error=mysql_errno(d->mysql); return 0; }
+  // Configuration is length-limited and restricted to timezone-name characters
+  // by the typed constructor; it cannot contain SQL quotes or delimiters.
+  char sql[100]; snprintf(sql, sizeof(sql), "SET time_zone = '%s'", d->time_zone);
+  if (mysql_query(d->mysql, sql)) { d->error=mysql_errno(d->mysql); return 0; }
+  return 1;
+}
 static int connect_db(Database *d) {
   if (d->mysql) return 1;
   MYSQL *m=mysql_init(NULL); if (!m) return 0;
@@ -59,16 +69,15 @@ static int connect_db(Database *d) {
   mysql_options(m, MYSQL_OPT_CONNECT_TIMEOUT, &timeout);
   mysql_options(m, MYSQL_OPT_READ_TIMEOUT, &timeout);
   mysql_options(m, MYSQL_OPT_WRITE_TIMEOUT, &timeout);
-  mysql_options(m, MYSQL_SET_CHARSET_NAME, "utf8mb4");
+  mysql_options(m, MYSQL_SET_CHARSET_NAME, d->charset);
   // Explicit TLS verification when a CA is configured; Connector/C also handles
   // MySQL 8 caching_sha2_password. Never enable multi-statements or LOCAL INFILE.
   const char *ca=d->ssl_ca;
   if (ca && *ca) { my_bool yes=1; mysql_options(m, MYSQL_OPT_SSL_CA, ca); mysql_options(m, MYSQL_OPT_SSL_VERIFY_SERVER_CERT, &yes); mysql_options(m, MYSQL_OPT_SSL_ENFORCE, &yes); }
   unsigned local=0; mysql_options(m, MYSQL_OPT_LOCAL_INFILE, &local);
   const char *plugin=d->plugin_dir; if (*plugin) mysql_options(m, MYSQL_PLUGIN_DIR, plugin);
-  if (!mysql_real_connect(m,d->host,d->user,d->password,d->database,d->port,NULL,CLIENT_FOUND_ROWS)) { d->error=mysql_errno(m); mysql_close(m); return 0; }
-  if (mysql_query(m,"SET time_zone = '+00:00'")) { d->error=mysql_errno(m); mysql_close(m); return 0; }
-  d->mysql=m; return 1;
+  if (!mysql_real_connect(m,d->host,d->user,d->password,d->database,d->port,NULL,d->found_rows ? CLIENT_FOUND_ROWS : 0)) { d->error=mysql_errno(m); mysql_close(m); return 0; }
+  d->mysql=m; return configure_session(d);
 }
 static int execute_statement(Database *d, Statement *s) {
   MYSQL_STMT *stmt=mysql_stmt_init(d->mysql); if (!stmt) return 0;
@@ -141,12 +150,21 @@ static void *worker(void *arg) {
     if (d->stopping) break;
     pthread_mutex_unlock(&d->mutex);
     d->error=0;
-    int ok=connect_db(d);
-    if (ok && d->transaction && mysql_query(d->mysql,"START TRANSACTION")) { d->error=mysql_errno(d->mysql); ok=0; }
-    for (int i=0;ok && i<d->statement_count;i++) ok=execute_statement(d,&d->statements[i]);
-    if (d->transaction && d->mysql) {
-      if (ok) { if(mysql_commit(d->mysql)) { d->error=mysql_errno(d->mysql); ok=0; mysql_rollback(d->mysql); } }
-      else mysql_rollback(d->mysql);
+    int ok=1;
+    if (d->cleanup == 2) {
+      if (d->mysql) { mysql_close(d->mysql); d->mysql=NULL; }
+    } else if (d->cleanup == 1) {
+      if (d->mysql) {
+        if (mysql_reset_connection(d->mysql)) { d->error=mysql_errno(d->mysql); ok=0; }
+        else ok=configure_session(d);
+      }
+    } else {
+      ok=connect_db(d);
+      if (d->cleanup == 3) {
+        if (ok && mysql_query(d->mysql, d->statements[0].sql)) { d->error=mysql_errno(d->mysql); ok=0; }
+      } else {
+        for (int i=0;ok && i<d->statement_count;i++) ok=execute_statement(d,&d->statements[i]);
+      }
     }
     if (!ok) {
       if (!d->error) d->error=1;
@@ -161,7 +179,7 @@ static void *worker(void *arg) {
   if(d->mysql) mysql_close(d->mysql);
   mysql_thread_end(); return NULL;
 }
-void *sk_mysql_new(const uint8_t *host,const uint8_t *user,const uint8_t *pass,const uint8_t *name,int32_t port,const uint8_t *ssl_ca,const uint8_t *plugin_dir,int32_t timeout,int32_t max_rows,int32_t max_bytes) {
+void *sk_mysql_new(const uint8_t *host,const uint8_t *user,const uint8_t *pass,const uint8_t *name,int32_t port,const uint8_t *ssl_ca,const uint8_t *plugin_dir,int32_t timeout,int32_t max_rows,int32_t max_bytes,const uint8_t *charset,const uint8_t *time_zone,int32_t found_rows) {
   pthread_once(&library_once, initialize_library);
   if (!library_ready) return NULL;
   Database *d=alloc(sizeof(*d));
@@ -170,6 +188,7 @@ void *sk_mysql_new(const uint8_t *host,const uint8_t *user,const uint8_t *pass,c
   d->host=copy_bytes(host); d->user=copy_bytes(user); d->password=copy_bytes(pass); d->database=copy_bytes(name); d->port=port;
   d->ssl_ca=copy_bytes(ssl_ca); d->plugin_dir=copy_bytes(plugin_dir);
   d->timeout=timeout; d->max_rows=max_rows; d->max_bytes=max_bytes;
+  d->charset=copy_bytes(charset); d->time_zone=copy_bytes(time_zone); d->found_rows=found_rows;
   if (pipe2(d->pipefd,O_CLOEXEC)) goto failed;
   if (fcntl(d->pipefd[0],F_SETFL,O_NONBLOCK)<0) goto failed;
   if (pthread_mutex_init(&d->mutex,NULL)) goto failed;
@@ -184,13 +203,20 @@ failed:
   if (cond_ready) pthread_cond_destroy(&d->cond);
   if (mutex_ready) pthread_mutex_destroy(&d->mutex);
   free(d->host); free(d->user); explicit_bzero(d->password,strlen(d->password));
-  free(d->password); free(d->database); free(d->ssl_ca); free(d->plugin_dir); free(d);
+  free(d->password); free(d->database); free(d->ssl_ca); free(d->plugin_dir); free(d->charset); free(d->time_zone); free(d);
   return NULL;
 }
 int32_t sk_mysql_fd(Database *d) { return d ? d->pipefd[0] : -1; }
-void sk_mysql_reset(Database *d,int32_t count,int32_t transaction) {
-  clear_statements(d); clear_result(d); d->transaction=transaction;
+void sk_mysql_reset(Database *d,int32_t count) {
+  clear_statements(d); clear_result(d); d->cleanup=0;
   d->statement_count=count; d->statements=alloc(sizeof(Statement)*count);
+}
+void sk_mysql_recycle(Database *d,int32_t discard) {
+  clear_statements(d); clear_result(d); d->cleanup=discard ? 2 : 1;
+}
+int32_t sk_mysql_connected(Database *d) { return d->mysql != NULL; }
+void sk_mysql_control(Database *d,const uint8_t *sql) {
+  sk_mysql_reset(d,1); d->cleanup=3; d->statements[0].sql=copy_bytes(sql);
 }
 void sk_mysql_statement(Database *d,int32_t index,const uint8_t *sql,int32_t count) {
   Statement *s=&d->statements[index]; s->sql=copy_bytes(sql); s->count=count; s->params=alloc(sizeof(Param)*count);
@@ -219,6 +245,8 @@ void sk_mysql_close(Database *d) {
   pthread_mutex_lock(&d->mutex); d->stopping=1; pthread_cond_signal(&d->cond); pthread_mutex_unlock(&d->mutex);
   pthread_join(d->thread,NULL); close(d->pipefd[1]); // read end belongs to RawFd
   clear_statements(d); clear_result(d); free(d->host); free(d->user);
-  explicit_bzero(d->password,strlen(d->password)); free(d->password); free(d->database); free(d->ssl_ca); free(d->plugin_dir);
+  explicit_bzero(d->password,strlen(d->password)); free(d->password); free(d->database); free(d->ssl_ca); free(d->plugin_dir); free(d->charset); free(d->time_zone);
   pthread_mutex_destroy(&d->mutex); pthread_cond_destroy(&d->cond); free(d);
 }
+
+void sk_mysql_close_unowned(Database *d) { close(d->pipefd[0]); sk_mysql_close(d); }

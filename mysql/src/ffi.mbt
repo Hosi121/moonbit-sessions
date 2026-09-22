@@ -3,7 +3,7 @@
 priv type Database
 
 ///|
-#borrow(host, user, pass, name, ssl_ca, plugin_dir)
+#borrow(host, user, pass, name, ssl_ca, plugin_dir, charset, time_zone)
 extern "C" fn c_db_new(
   host : Bytes,
   user : Bytes,
@@ -15,7 +15,26 @@ extern "C" fn c_db_new(
   timeout : Int,
   max_rows : Int,
   max_bytes : Int,
+  charset : Bytes,
+  time_zone : Bytes,
+  found_rows : Bool,
 ) -> Database = "sk_mysql_new"
+
+///|
+#borrow(db)
+extern "C" fn c_db_recycle(db : Database, discard : Bool) -> Unit = "sk_mysql_recycle"
+
+///|
+#borrow(db)
+extern "C" fn c_db_connected(db : Database) -> Bool = "sk_mysql_connected"
+
+///|
+#borrow(db, sql)
+extern "C" fn c_db_control(db : Database, sql : Bytes) -> Unit = "sk_mysql_control"
+
+///|
+#borrow(db)
+extern "C" fn c_db_close_unowned(db : Database) -> Unit = "sk_mysql_close_unowned"
 
 ///|
 #borrow(db)
@@ -23,11 +42,7 @@ extern "C" fn c_db_fd(db : Database) -> Int = "sk_mysql_fd"
 
 ///|
 #borrow(db)
-extern "C" fn c_db_reset(
-  db : Database,
-  count : Int,
-  transaction : Bool,
-) -> Unit = "sk_mysql_reset"
+extern "C" fn c_db_reset(db : Database, count : Int) -> Unit = "sk_mysql_reset"
 
 ///|
 #borrow(db, sql)

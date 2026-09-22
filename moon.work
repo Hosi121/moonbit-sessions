@@ -1,6 +1,10 @@
 members = [
+  "sql",
+  "postgres",
   "mysql",
   "ws_session",
   "examples/mysql",
+  "examples/conformance",
+  "examples/postgres",
   "examples/websocket",
 ]

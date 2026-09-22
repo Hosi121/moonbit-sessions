@@ -1,0 +1,8 @@
+import {
+  "hosi121/sql",
+  "moonbit-community/postgres/client",
+  "moonbit-community/postgres/pgpool",
+  "moonbitlang/async",
+}
+
+supported_targets = "native"

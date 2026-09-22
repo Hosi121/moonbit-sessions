@@ -7,6 +7,8 @@
     "moon": "node scripts/moon.mjs",
     "check": "node scripts/verify.mjs check",
     "test": "node scripts/verify.mjs test",
+    "test:postgres": "node scripts/verify.mjs postgres",
+    "test:databases": "npm run test:mysql && npm run test:postgres",
     "test:mysql": "node scripts/verify.mjs mysql",
     "test:consumer": "node scripts/verify.mjs consumer"
   }

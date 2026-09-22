@@ -1,6 +1,6 @@
-name = "hosi121/mysql"
+name = "hosi121/postgres"
 
-version = "0.2.0"
+version = "0.1.0"
 
 source = "src"
 
@@ -10,9 +10,10 @@ readme = "README.md"
 
 repository = "https://github.com/Hosi121/servicekit.mbt"
 
-description = "Typed async MySQL pool for native MoonBit using Connector/C workers"
+description = "Scoped SQL adapter for moonbit-community/postgres"
 
 import {
   "hosi121/sql@0.1.0",
+  "moonbit-community/postgres@0.0.8",
   "moonbitlang/async@0.22.1",
 }

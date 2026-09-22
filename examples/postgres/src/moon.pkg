@@ -1,8 +1,10 @@
 import {
-  "hosi121/sql",
-  "hosi121/sql_conformance" @contract,
-  "hosi121/mysql",
   "moonbitlang/async",
+  "hosi121/sql",
+  "hosi121/postgres",
+  "hosi121/sql_conformance" @contract,
+  "moonbit-community/postgres/client",
+  "moonbit-community/postgres/pgpool",
   "moonbitlang/core/env",
   "moonbitlang/core/string",
 }
@@ -10,7 +12,3 @@ import {
 supported_targets = "native"
 
 pkgtype(kind: "executable")
-
-options(
-  link: { "native": { "cc-link-flags": "-lmariadb -lpthread" } },
-)

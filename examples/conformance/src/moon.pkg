@@ -1,0 +1,6 @@
+import {
+  "hosi121/sql",
+  "moonbitlang/async",
+}
+
+supported_targets = "native"
