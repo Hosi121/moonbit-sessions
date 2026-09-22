@@ -1,0 +1,13 @@
+import {
+  "moonbitlang/async",
+  "moonbitlang/async/raw_fd",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/string",
+  "moonbitlang/core/debug",
+}
+
+supported_targets = "native"
+
+options(
+  native_stub: [ "worker.c" ],
+)

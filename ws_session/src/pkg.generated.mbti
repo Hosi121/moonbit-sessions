@@ -1,0 +1,33 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "hosi121/ws_session"
+
+import {
+  "moonbitlang/async/websocket",
+}
+
+// Values
+pub async fn with_session(@websocket.Conn, limits? : Limits, heartbeat? : Bool, on_error? : (Error) -> @websocket.CloseCode, async (Session) -> Unit) -> Unit
+
+// Errors
+pub(all) suberror InvalidLimits
+
+// Types and methods
+pub struct Limits {
+  max_pending_bytes : Int
+  max_pending_messages : Int
+  write_timeout_ms : Int
+  heartbeat_ms : Int
+  close_timeout_ms : Int
+}
+pub fn Limits::Limits(max_pending_bytes? : Int, max_pending_messages? : Int, write_timeout_ms? : Int, heartbeat_ms? : Int, close_timeout_ms? : Int) -> Self raise InvalidLimits
+
+pub struct Session {
+  // private fields
+}
+pub fn Session::close(Self) -> Unit
+pub fn Session::finish(Self, String, code? : @websocket.CloseCode) -> Bool
+pub fn Session::send(Self, String) -> Bool
+
+// Type aliases
+
+// Traits

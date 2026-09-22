@@ -1,0 +1,13 @@
+{
+  "name": "servicekit-mbt-development",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24.13.0" },
+  "scripts": {
+    "moon": "node scripts/moon.mjs",
+    "check": "node scripts/verify.mjs check",
+    "test": "node scripts/verify.mjs test",
+    "test:mysql": "node scripts/verify.mjs mysql",
+    "test:consumer": "node scripts/verify.mjs consumer"
+  }
+}

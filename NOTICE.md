@@ -1,0 +1,12 @@
+# Provenance
+
+The native MySQL worker/pool and WebSocket lifecycle code were written during the
+independent MoonBit implementation in Hosi121/SpeakUp-moonbit, extracted from
+revision `bfab6d95db6973c9e121cbc426271845a26f645a`, and restructured here.
+No original SpeakUp team's React assets, Go application code, schema, domain
+model, or oracle fixtures are included. No code from mizchi's repositories was
+copied; links in docs/design.md record the API/design comparison.
+
+`moonbitlang/async` and MariaDB Connector/C are external dependencies with their
+own licenses. They are not vendored or relicensed by this repository. Development
+toolchains downloaded into `.tools` are also excluded from distribution.

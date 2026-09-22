@@ -1,0 +1,63 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "hosi121/mysql"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn statement(String, params? : Array[Value]) -> Statement
+
+// Errors
+pub(all) suberror DatabaseError {
+  Closed
+  InvalidConfig(String)
+  InvalidParameter
+  ServerError(Int)
+  CompletionLost
+  WorkerUnavailable
+  ResultTooLarge
+}
+
+// Types and methods
+pub struct Pool {
+  // private fields
+}
+pub fn Pool::close(Self) -> Unit
+pub async fn Pool::new(host~ : String, user~ : String, password~ : String, database~ : String, port? : Int, size? : Int, ssl_ca? : String, plugin_dir? : String, timeout_seconds? : Int, max_rows? : Int, max_bytes? : Int) -> Self
+pub async fn Pool::query(Self, String, params? : Array[Value]) -> QueryResult
+pub async fn Pool::transaction(Self, Array[Statement]) -> QueryResult
+
+pub struct QueryResult {
+  rows : Array[Row]
+  has_rows : Bool
+  affected_rows : UInt64
+  insert_id : UInt64
+}
+
+pub struct Row {
+  values : Map[String, Value]
+}
+pub fn Row::get(Self, String) -> Value?
+
+pub(all) struct Statement {
+  sql : String
+  params : Array[Value]
+}
+
+pub(all) enum Value {
+  Null
+  Text(String)
+  Integer(Int64)
+  Unsigned(UInt64)
+  Float(Double)
+  Decimal(String)
+  Blob(Bytes)
+} derive(Eq, @debug.Debug)
+pub fn Value::equal(Self, Self) -> Bool
+pub fn Value::not_equal(Self, Self) -> Bool
+pub fn Value::to_repr(Self) -> @debug.Repr
+
+// Type aliases
+
+// Traits

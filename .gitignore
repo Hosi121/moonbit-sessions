@@ -1,0 +1,7 @@
+.tools/
+.mooncakes/
+_build/
+node_modules/
+*.log
+.env
+.env.*

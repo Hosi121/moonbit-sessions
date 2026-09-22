@@ -1,0 +1,6 @@
+members = [
+  "mysql",
+  "ws_session",
+  "examples/mysql",
+  "examples/websocket",
+]
