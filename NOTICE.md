@@ -7,6 +7,7 @@ No original SpeakUp team's React assets, Go application code, schema, domain
 model, or oracle fixtures are included. No code from mizchi's repositories was
 copied; links in docs/design.md record the API/design comparison.
 
-`moonbitlang/async` and MariaDB Connector/C are external dependencies with their
-own licenses. They are not vendored or relicensed by this repository. Development
+`moonbitlang/async`, MariaDB Connector/C, `moonbit-community/postgres`, and its
+transitive dependencies `moonbitlang/x` and `tonyfettes/unicode` have their own
+licenses. They are not vendored or relicensed by this repository. Development
 toolchains downloaded into `.tools` are also excluded from distribution.
