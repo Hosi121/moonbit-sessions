@@ -56,27 +56,41 @@ if (mode === 'check') {
       SERVICEKIT_POSTGRES_USER: decodeURIComponent(url.username), SERVICEKIT_POSTGRES_PASSWORD: decodeURIComponent(url.password),
       SERVICEKIT_POSTGRES_DATABASE: decodeURIComponent(url.pathname.slice(1)) },
   });
-} else if (mode === 'consumer') {
-  // Each application builds with only its own dependency, outside this checkout.
+} else if (mode === 'consumer' || mode === 'registry') {
+  // Registry checks copy only consumer code; all libraries resolve from Mooncakes.
+  if (mode === 'registry') moon('update');
   for (const [library, example] of [['mysql', 'mysql'], ['postgres_session', 'postgres'], ['moondb_session', 'moondb'], ['ws_session', 'websocket']]) {
     const dir = mkdtempSync(join(tmpdir(), 'servicekit-consumer-'));
     try {
-      cpSync(library, join(dir, 'library'), { recursive: true });
       cpSync(`examples/${example}`, join(dir, 'consumer'), { recursive: true });
-      const members = ['library', 'consumer'];
+      const members = ['consumer'];
+      if (mode === 'consumer') {
+        cpSync(library, join(dir, 'library'), { recursive: true });
+        members.push('library');
+      }
       if (library !== 'ws_session') {
-        cpSync('sql_session', join(dir, 'sql'), { recursive: true });
         cpSync('examples/conformance', join(dir, 'conformance'), { recursive: true });
-        members.push('sql', 'conformance');
+        members.push('conformance');
+        if (mode === 'consumer') {
+          cpSync('sql_session', join(dir, 'sql'), { recursive: true });
+          members.push('sql');
+        }
       }
       writeFileSync(join(dir, 'moon.work'), `members = ${JSON.stringify(members)}\n`);
-      run(process.execPath, ['scripts/moon.mjs', '-C', dir, 'build', '--target', 'native', '--release']);
+      const build = join(dir, '_build');
+      run(process.execPath, ['scripts/moon.mjs', '-C', dir, 'build', '--target', 'native', '--release', '--target-dir', build]);
       if (library !== 'mysql') {
         const module = example === 'websocket' ? 'ws_session' : example;
-        const binary = join(dir, `_build/native/release/build/Hosi121/${module}_example/${module}_example.exe`);
+        const output = join(build, 'native/release/build');
+        // Locate the executable independently of the workspace's member count.
+        const binaries = readdirSync(output, { recursive: true }).filter(path => path.endsWith(`${module}_example.exe`));
+        if (binaries.length !== 1) throw new Error(`Expected one ${module} executable, found ${binaries.length}`);
+        const binary = join(output, binaries[0]);
         const linked = spawnSync('ldd', [binary], { env, encoding: 'utf8' });
-        if (linked.status !== 0 || /libmariadb|libmysqlclient/.test(linked.stdout)) throw new Error('Non-MySQL consumer must not link MySQL');
+        if (linked.status !== 0) throw new Error(`ldd failed for ${binary}: ${linked.stderr}`);
+        if (/libmariadb|libmysqlclient/.test(linked.stdout)) throw new Error(`${library} consumer linked MySQL`);
       }
+      console.log(`Verified ${library} ${mode} consumer.`);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   }
-} else throw new Error('Expected check, test, mysql, postgres, moondb, or consumer');
+} else throw new Error('Expected check, test, mysql, postgres, moondb, consumer, or registry');

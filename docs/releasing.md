@@ -49,8 +49,18 @@ minimum versions; do not overwrite an existing release. A partial publication is
 not rolled back by deleting public versions: inspect registry state and publish
 only the remaining modules using `moon -C <module> publish`.
 
-Finally verify the versions with `moon view`, build a fresh registry consumer,
-and switch SpeakUp's production dependency resolution from the development
-submodule to `moon.mod` registry dependencies. Remove the submodule only after
-that registry build and application integration tests pass. Update the README
-availability statement after the registry check, never before it.
+After uploading all modules, the release script runs `test:registry`. This builds
+four fresh consumers with only their application/conformance code in the
+workspace; all library modules come from Mooncakes. It also checks that non-MySQL
+consumers do not link MariaDB. Run this check independently with:
+
+```sh
+npm run test:registry
+```
+
+Verify each exact version with `moon view`, compare registry checksums with
+`_build/publish/manifest.json`, and record the source revision in the release
+notes. Update the README availability statement after the registry check, never
+before it. Downstream applications update `moon.mod` and run their integration
+tests against the published modules. SpeakUp uses this registry workflow; its
+development submodule was removed after the first release passed those tests.

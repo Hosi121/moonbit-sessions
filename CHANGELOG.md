@@ -1,6 +1,12 @@
 # Changes
 
-## First Mooncakes release candidates
+## 2026-09-22 — First Mooncakes releases
+
+All five modules below are published on Mooncakes. Their source revision is
+[`9d53860`](https://github.com/Hosi121/moonbit-sessions/commit/9d53860268561d320b70927f5b46b9a9214a69cc).
+Registry checksums match the verified distribution archives. Four fresh registry
+consumers compile successfully, and SpeakUp's native database integration and
+browser call tests pass with the published modules.
 
 - Rename the source repository from `servicekit.mbt` to `moonbit-sessions`.
 - Use the publisher namespace `Hosi121` and license each module under Apache-2.0.

@@ -95,6 +95,7 @@ try {
       moon('-C', entry.dir, 'publish');
       moon('update');
     }
-    console.log('Published all modules. Verify a fresh registry consumer before announcing availability.');
+    run(process.execPath, ['scripts/verify.mjs', 'registry']);
+    console.log('Published all modules and verified four fresh registry consumers.');
   }
 } finally { rmSync(stage, { recursive: true, force: true }); }

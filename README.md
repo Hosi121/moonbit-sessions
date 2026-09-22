@@ -25,11 +25,12 @@ All modules are experimental and currently target native MoonBit.
 
 ## Install
 
-The first Mooncakes release is being prepared; until publication is recorded in
-the release notes, use the [source-development setup](docs/development.md).
-The registry installation after publication is:
+The versions above were published to Mooncakes on **2026-09-22** under the
+`Hosi121` namespace. See the [release notes](CHANGELOG.md) for the source revision.
+Install the module needed by your native MoonBit project:
 
 ```sh
+moon update
 moon add Hosi121/postgres_session
 # Or: moon add Hosi121/mysql
 # Or: moon add Hosi121/moondb_session
@@ -84,6 +85,10 @@ connection pinning, read/decide/write transactions, rollback, cancellation,
 expired sessions, admission and shutdown. Separate tests cover unknown commit
 outcomes, cleanup failures, exact values, result limits and WebSocket ordering.
 `test:packages` builds isolated consumers from actual distributable archives.
+`test:registry` builds four fresh consumers using the published Mooncakes modules,
+without copying any library source into their workspaces. Both checks passed for
+the first release; the registry checks also verify that non-MySQL consumers do
+not link MariaDB.
 
 Cancellation drains submitted operations before cleanup; it does not immediately
 cancel SQL on the server. A canceled autocommit write may have succeeded, and

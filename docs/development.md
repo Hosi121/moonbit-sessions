@@ -1,7 +1,7 @@
 # Source development
 
-Normal library consumption uses independently versioned Mooncakes modules after
-publication. Use a Git checkout/workspace only when editing library source or
+Normal library consumption uses independently versioned Mooncakes modules.
+Use a Git checkout/workspace only when editing library source or
 testing an unpublished revision.
 
 ```sh
@@ -15,6 +15,11 @@ npm test
 npm run test:consumer
 npm run test:packages
 ```
+
+`npm run test:registry` separately checks the published versions declared by the
+examples. It copies only consumer/conformance code into fresh workspaces and
+resolves all library modules from Mooncakes. Use `test:consumer` and
+`test:packages` above when checking an unpublished source revision.
 
 Node 24.13+ runs scripts with built-in modules. The checksum-pinned MoonBit
 installation lives in `.tools/moon`; no npm install is required in this repo.

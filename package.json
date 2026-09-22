@@ -12,6 +12,7 @@
     "test:databases": "npm run test:mysql && npm run test:postgres && npm run test:moondb",
     "test:mysql": "node scripts/verify.mjs mysql",
     "test:consumer": "node scripts/verify.mjs consumer",
+    "test:registry": "node scripts/verify.mjs registry",
     "test:packages": "node scripts/release.mjs check",
     "release": "node scripts/release.mjs publish"
   }
