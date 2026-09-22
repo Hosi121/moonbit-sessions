@@ -1,5 +1,5 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "hosi121/sql"
+package "Hosi121/sql_session"
 
 // Values
 pub fn column_index(Array[String], String) -> Int raise
@@ -17,6 +17,7 @@ pub(all) suberror SqlError {
   CleanupFailed(Error?, Error)
   AmbiguousColumn(String)
   ColumnNotFound(String)
+  CombinedResultUnavailable
 }
 
 // Types and methods
@@ -37,10 +38,15 @@ pub(all) struct Driver[C, P, R, M, O] {
   acquire : async () -> C
   release : async (C, Bool) -> Unit
   close : () -> Unit
-  run : async (C, String, Array[P]) -> Response[R, M]
+  executor : Executor[C, P, R, M]
   begin : async (C, O) -> Unit
   commit : async (C) -> Unit
   rollback : async (C) -> Unit
+}
+
+pub(all) enum Executor[C, P, R, M] {
+  Combined(async (C, String, Array[P]) -> Response[R, M])
+  Separate(query~ : async (C, String, Array[P]) -> Array[R], execute~ : async (C, String, Array[P]) -> M)
 }
 
 pub(all) struct Response[R, M] {

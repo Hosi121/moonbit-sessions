@@ -1,0 +1,20 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "Hosi121/moondb_session"
+
+import {
+  "Hosi121/sql_session",
+  "moonbitstack/moondb",
+}
+
+// Values
+pub fn[C : @moondb.AsyncDriver] database(acquire~ : async () -> C, release~ : async (C, Bool) -> Unit, close~ : () -> Unit, max_leases~ : Int, max_waiters? : Int, checkout_timeout_ms? : Int) -> @sql_session.Database[@moondb.Value, @moondb.Row, @moondb.ExecResult, Unit] raise
+
+pub fn[C : @moondb.AsyncDriver, O] database_with_options(acquire~ : async () -> C, release~ : async (C, Bool) -> Unit, close~ : () -> Unit, begin~ : async (C, O) -> Unit, max_leases~ : Int, max_waiters? : Int, checkout_timeout_ms? : Int) -> @sql_session.Database[@moondb.Value, @moondb.Row, @moondb.ExecResult, O] raise
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits

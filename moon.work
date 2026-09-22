@@ -1,8 +1,10 @@
 members = [
-  "sql",
-  "postgres",
+  "sql_session",
+  "postgres_session",
   "mysql",
   "ws_session",
+  "moondb_session",
+  "examples/moondb",
   "examples/mysql",
   "examples/conformance",
   "examples/postgres",

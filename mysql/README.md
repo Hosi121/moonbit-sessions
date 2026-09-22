@@ -1,13 +1,14 @@
-# hosi121/mysql
+# Hosi121/mysql
 
-Native MySQL adapter for the [shared SQL contract](../sql/README.md), using one
-MariaDB Connector/C worker per physical connection. It imports `hosi121/sql`
+Native MySQL adapter for the [shared SQL contract](https://github.com/Hosi121/moonbit-sessions/blob/main/sql_session/README.md), using one
+MariaDB Connector/C worker per physical connection. It imports `Hosi121/sql_session`
 and async, with no dependency on PostgreSQL, WebSocket, an application or Node.
 
-Version **0.2.0** changes rows to ordered columns/values and moves scope/admission
-errors to `hosi121/sql`. Add `vendor/servicekit/sql` and `vendor/servicekit/mysql`
-to your workspace, and import `hosi121/sql@0.1.0` / `hosi121/mysql@0.2.0` in
-`moon.mod`. These are source modules, not Mooncakes releases.
+Version **0.3.0** uses `Hosi121/sql_session` for lifetime management.
+After registry publication: `moon add Hosi121/mysql`. Import
+`"Hosi121/mysql" @mysql` and, when naming the returned database type,
+`"Hosi121/sql_session" @sql` in `moon.pkg`.
+Apache-2.0; Connector/C retains its own license.
 
 The **consumer executable** needs Connector/C development files and:
 
@@ -53,7 +54,7 @@ mode. SQL remains MySQL SQL, including DDL's implicit-commit behavior.
   statement's result. Their old row-map/Closed-error behavior is not preserved.
 
 See [generated signatures](src/pkg.generated.mbti) and the
-[independent executable consumer](../examples/mysql/src/main.mbt).
+[independent executable consumer](https://github.com/Hosi121/moonbit-sessions/blob/main/examples/mysql/src/main.mbt).
 
 ## Ownership and limits
 

@@ -120,7 +120,9 @@ pub async fn Pool::new(
           conn.recycle(discard)
         }
       },
-      run: async fn(conn, sql, params) { conn.run(sql, params) },
+      executor: @sql.Combined(async fn(conn, sql, params) {
+        conn.run(sql, params)
+      }),
       begin: async fn(conn, options : TransactionOptions) {
         if options.isolation is Some(isolation) {
           let name = match isolation {

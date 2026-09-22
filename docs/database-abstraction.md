@@ -3,27 +3,29 @@
 Status: **experimental implementation**, validated with MySQL 8.4 and PostgreSQL
 17. The initial extraction provided a MySQL-specific pool. The common API was
 missing work, not a demonstrated reason to reject abstraction. It now exists as
-`hosi121/sql` and is used by both adapters and the SpeakUp native consumer.
+`Hosi121/sql_session` and is used by both adapters and the SpeakUp native consumer.
 
 ## What is shared
 
 ```mermaid
 flowchart TD
-  A[Application / typed queries] --> S[hosi121/sql: scoped execution and transactions]
-  S --> M[hosi121/mysql adapter]
-  S --> P[hosi121/postgres adapter]
+  A[Application / typed queries] --> S[Hosi121/sql_session: scoped execution and transactions]
+  S --> M[Hosi121/mysql adapter]
+  S --> P[Hosi121/postgres_session adapter]
+  S --> D[Hosi121/moondb_session adapter]
+  D --> E[Existing moondb AsyncDriver]
   M --> W[Connector/C workers and physical pool]
   P --> U[moonbit-community/postgres client and pgpool]
 ```
 
 | Layer | Implemented contract | Deliberately separate |
 | --- | --- | --- |
-| Execution | query / execute / run with typed parameters, rows and metadata | SQL syntax/placeholders and codecs |
+| Execution | query / execute; optional combined run | SQL syntax/placeholders and codecs |
 | Lifetime | One callback owns one session; expired/concurrent operations are rejected | Physical connect/close/recycle |
 | Transaction | Read/decide/write callback, commit or rollback, cleanup on cancellation | Isolation/options and engine semantics |
 | Admission | Bounded admitted requests, checkout timeout, observable counts | Actual connection pool and create/recycle I/O |
 | Failure | No write retry, preserved causes, conservative unknown-commit outcome | SQLSTATE/server codes and retry decisions |
-| Rows | Ordered columns, checked name lookup | Backend types, metadata and decoding |
+| Rows | Native adapters check ambiguous names; moondb preserves upstream rows | Backend types, lookup, metadata and decoding |
 
 This is execution/ownership portability, not query/schema portability. MySQL
 `CLIENT_FOUND_ROWS`, unsigned integers and insert IDs do not acquire PostgreSQL
@@ -125,3 +127,13 @@ MySQL generator adapter and integration with this facade remain unimplemented.
 The runtime does not require replacing the existing generator. SpeakUp's DTOs
 stay shared across MoonBit native/JS; database connections and row internals do
 not cross the JS ABI.
+
+## Existing common interface
+
+`moondb_session` uses `moonbitstack/moondb@0.1.8` directly. It preserves
+Value/Row/ExecResult, accepts the existing AsyncDriver trait, and supplies lifetime
+management around the caller's connection source. Its separate executor never
+replays SQL or fabricates command metadata; combined `run` is unsupported.
+The same real-DB suite passes through `moonbitstack/moonpostgres@0.6.0`.
+See [ecosystem choices](ecosystem.md) for reuse decisions and [release verification](releasing.md)
+for the distinct registry publication units.

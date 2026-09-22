@@ -1,0 +1,13 @@
+import {
+  "Hosi121/moondb_session" @sessions,
+  "Hosi121/sql_conformance" @contract,
+  "moonbitstack/moondb",
+  "moonbitstack/moonpostgres" @pg,
+  "moonbitlang/async",
+  "moonbitlang/core/env",
+  "moonbitlang/core/string",
+}
+
+pkgtype(kind: "executable")
+
+supported_targets = "native"

@@ -1,0 +1,29 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "Hosi121/postgres_session"
+
+import {
+  "Hosi121/sql_session",
+  "moonbit-community/postgres/client",
+  "moonbit-community/postgres/pgpool",
+  "moonbitlang/async",
+}
+
+// Values
+pub fn database(@pgpool.Config, @async.TaskGroup[Unit], max_waiters? : Int, checkout_timeout_ms? : Int, max_rows? : Int, max_bytes? : Int) -> @sql_session.Database[&@client.ToSql, Row, @client.QuerySummary, @pgpool.TransactionOptions] raise
+
+pub async fn[T] with_database(@pgpool.Config, async (@sql_session.Database[&@client.ToSql, Row, @client.QuerySummary, @pgpool.TransactionOptions]) -> T, max_waiters? : Int, checkout_timeout_ms? : Int, max_rows? : Int, max_bytes? : Int) -> T
+
+// Errors
+pub(all) suberror ResultTooLarge
+
+// Types and methods
+pub struct Row {
+  columns : Array[@client.Column]
+  // private fields
+}
+pub fn[T : @client.FromSql] Row::get(Self, String) -> T raise
+pub fn[T : @client.FromSql] Row::get_at(Self, Int) -> T raise
+
+// Type aliases
+
+// Traits

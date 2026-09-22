@@ -32,10 +32,11 @@ jobs:
       - uses: actions/setup-node@v7.0.0
         with:
           node-version: 24.13.0
-      - run: sudo apt-get update && sudo apt-get install -y build-essential libmariadb-dev libssl-dev
+      - run: sudo apt-get update && sudo apt-get install -y build-essential libmariadb-dev libssl-dev unzip
       - run: bash scripts/install-moon.sh && npm run moon -- update
       - run: npm run moon -- fmt && npm run check
       - run: git diff --exit-code
       - run: npm test
       - run: npm run test:consumer
       - run: npm run test:databases
+      - run: npm run test:packages

@@ -1,8 +1,8 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "hosi121/mysql"
+package "Hosi121/mysql"
 
 import {
-  "hosi121/sql",
+  "Hosi121/sql_session",
   "moonbitlang/core/debug",
 }
 
@@ -38,7 +38,7 @@ pub struct Pool {
   // private fields
 }
 pub fn Pool::close(Self) -> Unit
-pub fn Pool::database(Self) -> @sql.Database[Value, Row, Command, TransactionOptions]
+pub fn Pool::database(Self) -> @sql_session.Database[Value, Row, Command, TransactionOptions]
 pub async fn Pool::new(host~ : String, user~ : String, password~ : String, database~ : String, port? : Int, size? : Int, ssl_ca? : String, plugin_dir? : String, timeout_seconds? : Int, max_rows? : Int, max_bytes? : Int, max_waiters? : Int, checkout_timeout_ms? : Int, charset? : String, time_zone? : String, found_rows? : Bool) -> Self
 pub async fn Pool::query(Self, String, params? : Array[Value]) -> QueryResult
 pub async fn Pool::transaction(Self, Array[Statement]) -> QueryResult

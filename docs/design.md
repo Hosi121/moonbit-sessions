@@ -1,23 +1,22 @@
 # Scope assessment
 
-Status: four native modules with an experimental SQL contract validated on
+Status: five native modules with an experimental SQL contract validated on
 MySQL and PostgreSQL. This is not an application framework or SQL translator.
 
 ## Reuse boundaries
 
 | Concern | Location | Evidence / limit |
 | --- | --- | --- |
-| Session lifetime, interactive transactions, admission and cleanup | `sql` | One implementation and conformance suite used by two real RDBMS adapters |
+| Session lifetime, interactive transactions, admission and cleanup | `sql_session` | One implementation and conformance suite used by two real RDBMS adapters |
 | Connector/C binding, workers, codecs and physical pool | `mysql` | MySQL-specific; consumes the common SQL contract |
-| PostgreSQL integration | `postgres` | Reuses existing upstream client/pgpool, typed parameters and diagnostics |
+| PostgreSQL integration | `postgres_session` | Reuses existing upstream client/pgpool, typed parameters and diagnostics |
 | Bounded text sends, heartbeat, final flush | `ws_session` | Independently consumable; no DB dependency or application peer IDs |
 | Rooms, auth, HTTP ingress policy, JSON DTO conversion | Application | Application rules, not required by the reusable modules |
 | TS2Mbt / Mbt2TS and JS ABI checks | Existing tools and application | Database handles are not exported to JS; no duplicate generator |
 
-`mysql` and `postgres` depend on `sql`, never on one another. `ws_session` does
-not import any database module. There is no all-in-one umbrella module. A Git
-submodule pins these source modules; their common runtime contract and tests,
-rather than the distribution method, provide cross-driver reuse.
+`mysql` and `postgres_session` depend on `sql_session`, never on one another. `ws_session` does
+not import any database module. There is no all-in-one umbrella module. Modules are independently packaged for Mooncakes from one repository. A Git
+submodule is an optional source-development workflow. See [release verification](releasing.md).
 
 See [database-abstraction.md](database-abstraction.md) for implemented behavior,
 real-DB evidence, and remaining SQLite/sqlc work.
@@ -47,6 +46,8 @@ Primary source versions inspected on 2026-09-22:
   version-specific checks stay in the application. No generator version update
   was needed for the SQL abstraction.
 
-Only the PostgreSQL package has been integrated and tested here; the other
-comparisons do not establish compatibility or endorsement by their authors.
-PostgreSQL is a declared package dependency, not copied source.
+The common PostgreSQL package and `moonbitstack/moondb` are integrated registry
+dependencies, with a third-party `moonpostgres` consumer in the test suite.
+See [the updated ecosystem comparison](ecosystem.md) for the decisions and
+version-specific limits. Other comparisons do not establish compatibility or
+author endorsement. No upstream implementation is copied into this repository.

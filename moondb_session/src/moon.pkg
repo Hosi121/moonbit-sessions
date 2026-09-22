@@ -1,0 +1,7 @@
+import {
+  "Hosi121/sql_session" @sql,
+  "moonbitstack/moondb",
+  "moonbitlang/async",
+}
+
+supported_targets = "native"

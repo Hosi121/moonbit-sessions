@@ -64,7 +64,7 @@ pub fn database(
           conn.client.release()
         }
       },
-      run: async fn(conn, sql, params) {
+      executor: @sql.Combined(async fn(conn, sql, params) {
         // The upstream stream scope drains protocol state even on decode/limit
         // failures. Cancellation cannot leave rows for the next borrower.
         let collect = async fn(stream : @pgpool.RowStream) {
@@ -89,7 +89,7 @@ pub fn database(
             None => conn.client.with_stream(sql, params~, collect)
           }
         })
-      },
+      }),
       begin: async fn(conn, options) {
         conn.transaction = Some(conn.client.transaction(options~))
       },

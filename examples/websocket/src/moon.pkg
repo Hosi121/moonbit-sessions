@@ -1,5 +1,5 @@
 import {
-  "hosi121/ws_session" @session,
+  "Hosi121/ws_session" @session,
   "moonbitlang/async",
   "moonbitlang/async/io",
   "moonbitlang/core/buffer",

@@ -1,8 +1,8 @@
 import {
   "moonbitlang/async",
-  "hosi121/sql",
-  "hosi121/postgres",
-  "hosi121/sql_conformance" @contract,
+  "Hosi121/sql_session" @sql,
+  "Hosi121/postgres_session" @postgres,
+  "Hosi121/sql_conformance" @contract,
   "moonbit-community/postgres/client",
   "moonbit-community/postgres/pgpool",
   "moonbitlang/core/env",

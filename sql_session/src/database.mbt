@@ -11,6 +11,7 @@ pub(all) suberror SqlError {
   CleanupFailed(Error?, Error)
   AmbiguousColumn(String)
   ColumnNotFound(String)
+  CombinedResultUnavailable
 }
 
 ///|
@@ -22,14 +23,26 @@ pub(all) struct Response[R, M] {
 }
 
 ///|
-/// Adapter SPI. acquire must be cancellation-safe. Every operation must drain
+/// Preserve the upstream execution API. Separate query/execute drivers need not
+/// invent command metadata for queries or execute a statement twice. run() is an
+/// optional capability, available only for Combined executors.
+pub(all) enum Executor[C, P, R, M] {
+  Combined(async (C, String, Array[P]) -> Response[R, M])
+  Separate(
+    query~ : async (C, String, Array[P]) -> Array[R],
+    execute~ : async (C, String, Array[P]) -> M
+  )
+}
+
+///|
+/// Lifetime adapter. acquire must be cancellation-safe. Every operation must drain
 /// or discard unfinished work before returning/raising. release must retire a
 /// dirty connection even when cleanup raises. No automatic retries of writes.
 pub(all) struct Driver[C, P, R, M, O] {
   acquire : async () -> C
   release : async (C, Bool) -> Unit
   close : () -> Unit
-  run : async (C, String, Array[P]) -> Response[R, M]
+  executor : Executor[C, P, R, M]
   begin : async (C, O) -> Unit
   commit : async (C) -> Unit
   rollback : async (C) -> Unit
@@ -46,7 +59,9 @@ pub struct Status {
 
 ///|
 pub struct Session[P, R, M] {
-  priv run_impl : async (String, Array[P]) -> Response[R, M]
+  priv run_impl : (async (String, Array[P]) -> Response[R, M])?
+  priv query_impl : async (String, Array[P]) -> Array[R]
+  priv execute_impl : async (String, Array[P]) -> M
   priv mut live : Bool
   priv mut busy : Bool
   priv mut failed : Bool
@@ -96,7 +111,23 @@ pub fn[C, P, R, M, O] Database::new(
       let conn = (driver.acquire)()
       {
         session: {
-          run_impl: async fn(sql, params) { (driver.run)(conn, sql, params) },
+          run_impl: match driver.executor {
+            Combined(run) =>
+              Some(async fn(sql, params) { run(conn, sql, params) })
+            Separate(..) => None
+          },
+          query_impl: async fn(sql, params) {
+            match driver.executor {
+              Combined(run) => run(conn, sql, params).rows
+              Separate(query~, ..) => query(conn, sql, params)
+            }
+          },
+          execute_impl: async fn(sql, params) {
+            match driver.executor {
+              Combined(run) => run(conn, sql, params).metadata
+              Separate(execute~, ..) => execute(conn, sql, params)
+            }
+          },
           live: true,
           busy: false,
           failed: false,
@@ -160,11 +191,10 @@ pub async fn[P, R, M, O] Database::close_and_wait(
 }
 
 ///|
-pub async fn[P, R, M] Session::run(
+async fn[P, R, M, T] Session::guarded(
   self : Session[P, R, M],
-  sql : String,
-  params? : Array[P] = [],
-) -> Response[R, M] {
+  f : async () -> T,
+) -> T {
   guard self.live else { raise SessionReleased }
   guard !self.busy else { raise OperationInProgress }
   guard !self.failed else { raise SessionFailed }
@@ -178,7 +208,24 @@ pub async fn[P, R, M] Session::run(
   errdefer {
     self.failed = true
   }
-  (self.run_impl)(sql, params)
+  f()
+}
+
+///|
+/// Available when the upstream driver returns rows and metadata together.
+/// A separate query/execute driver raises CombinedResultUnavailable; no SQL is
+/// guessed, replayed, or given fabricated metadata.
+pub async fn[P, R, M] Session::run(
+  self : Session[P, R, M],
+  sql : String,
+  params? : Array[P] = [],
+) -> Response[R, M] {
+  self.guarded(async fn() {
+    match self.run_impl {
+      Some(run) => run(sql, params)
+      None => raise CombinedResultUnavailable
+    }
+  })
 }
 
 ///|
@@ -187,7 +234,7 @@ pub async fn[P, R, M] Session::query(
   sql : String,
   params? : Array[P] = [],
 ) -> Array[R] {
-  self.run(sql, params~).rows
+  self.guarded(async fn() { (self.query_impl)(sql, params) })
 }
 
 ///|
@@ -196,7 +243,7 @@ pub async fn[P, R, M] Session::execute(
   sql : String,
   params? : Array[P] = [],
 ) -> M {
-  self.run(sql, params~).metadata
+  self.guarded(async fn() { (self.execute_impl)(sql, params) })
 }
 
 ///|
@@ -357,7 +404,7 @@ pub async fn[P, R, M, O] Database::query(
   sql : String,
   params? : Array[P] = [],
 ) -> Array[R] {
-  self.run(sql, params~).rows
+  self.with_session(async fn(session) { session.query(sql, params~) })
 }
 
 ///|
@@ -366,7 +413,7 @@ pub async fn[P, R, M, O] Database::execute(
   sql : String,
   params? : Array[P] = [],
 ) -> M {
-  self.run(sql, params~).metadata
+  self.with_session(async fn(session) { session.execute(sql, params~) })
 }
 
 ///|

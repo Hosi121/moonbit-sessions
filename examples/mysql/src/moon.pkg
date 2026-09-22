@@ -1,7 +1,7 @@
 import {
-  "hosi121/sql",
-  "hosi121/sql_conformance" @contract,
-  "hosi121/mysql",
+  "Hosi121/sql_session" @sql,
+  "Hosi121/sql_conformance" @contract,
+  "Hosi121/mysql",
   "moonbitlang/async",
   "moonbitlang/core/env",
   "moonbitlang/core/string",

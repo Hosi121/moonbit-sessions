@@ -13,8 +13,8 @@ fn fake(
   commit_fails? : Bool = false,
   rollback_fails? : Bool = false,
   release_fails? : Bool = false,
-) -> @sql.Database[Int, Int, Int, Unit] raise {
-  @sql.Database::new(
+) -> @sql_session.Database[Int, Int, Int, Unit] raise {
+  @sql_session.Database::new(
     {
       acquire: () => 1,
       close: () => events.push("close"),
@@ -24,12 +24,12 @@ fn fake(
           raise Release
         }
       },
-      run: fn(_, sql, _) raise {
+      executor: @sql_session.Combined(fn(_, sql, _) raise {
         if sql == "fail" {
           raise Query
         }
         { rows: [1], metadata: 1, }
-      },
+      }),
       begin: (_, _) => events.push("begin"),
       commit: fn(_) raise {
         events.push("commit")
@@ -55,7 +55,7 @@ async test "lost commit response is not retried; session is discarded" {
   defer db.close()
   assert_true(
     try db.with_transaction((), _ => ()) catch {
-      @sql.CommitOutcomeUnknown(Commit) => true
+      @sql_session.CommitOutcomeUnknown(Commit) => true
       error => raise error
     } noraise {
       _ => false
@@ -88,7 +88,7 @@ async test "rollback failure retains original error and retires the lease" {
   defer db.close()
   assert_true(
     try db.with_transaction((), fn(_) -> Unit raise { raise Body }) catch {
-      @sql.CleanupFailed(Some(Body), Rollback) => true
+      @sql_session.CleanupFailed(Some(Body), Rollback) => true
       error => raise error
     } noraise {
       _ => false
@@ -114,7 +114,7 @@ async test "a swallowed SQL failure cannot silently commit" {
         )
       })
     catch {
-      @sql.SessionFailed => true
+      @sql_session.SessionFailed => true
       error => raise error
     } noraise {
       _ => false
@@ -130,7 +130,7 @@ async test "release failure reports cleanup without losing callback error" {
   defer db.close()
   assert_true(
     try db.with_session(fn(_) -> Unit raise { raise Body }) catch {
-      @sql.CleanupFailed(Some(Body), Release) => true
+      @sql_session.CleanupFailed(Some(Body), Release) => true
       error => raise error
     } noraise {
       _ => false
@@ -139,7 +139,7 @@ async test "release failure reports cleanup without losing callback error" {
   assert_eq(db.status().leased, 0)
   assert_true(
     try db.query("ok") catch {
-      @sql.CleanupFailed(None, Release) => true
+      @sql_session.CleanupFailed(None, Release) => true
       error => raise error
     } noraise {
       _ => false
@@ -153,19 +153,19 @@ async test "unjoined operation drains before release, rejects new operations" {
   let finish : @async.Queue[Unit] = @async.Queue(kind=Unbounded)
   let retiring : @async.Queue[Unit] = @async.Queue(kind=Unbounded)
   let events : Array[String] = []
-  let db : @sql.Database[Int, Int, Int, Unit] = @sql.Database::new(
+  let db : @sql_session.Database[Int, Int, Int, Unit] = @sql_session.Database::new(
     {
       acquire: () => 1,
       close: () => (),
       release: (_, _) => events.push("released"),
-      run: async fn(_, _, _) {
+      executor: @sql_session.Combined(async fn(_, _, _) {
         @async.protect_from_cancel(async fn() {
           started.put(())
           finish.get()
           events.push("drained")
           { rows: [1], metadata: 1, }
         })
-      },
+      }),
       begin: (_, _) => (),
       commit: _ => events.push("commit"),
       rollback: _ => events.push("rollback"),
@@ -174,7 +174,7 @@ async test "unjoined operation drains before release, rejects new operations" {
   )
   defer db.close()
   @async.with_task_group(async fn(group) {
-    let escaped : Ref[@sql.Session[Int, Int, Int]?] = { val: None, }
+    let escaped : Ref[@sql_session.Session[Int, Int, Int]?] = { val: None, }
     let scope = group.spawn(async fn() {
       try
         db.with_transaction((), async fn(tx) {
@@ -184,7 +184,7 @@ async test "unjoined operation drains before release, rejects new operations" {
           retiring.put(())
         })
       catch {
-        @sql.OperationInProgress => true
+        @sql_session.OperationInProgress => true
         error => raise error
       } noraise {
         _ => false
@@ -193,7 +193,7 @@ async test "unjoined operation drains before release, rejects new operations" {
     retiring.get()
     assert_true(
       try escaped.val.unwrap().query("new") catch {
-        @sql.SessionReleased => true
+        @sql_session.SessionReleased => true
         error => raise error
       } noraise {
         _ => false

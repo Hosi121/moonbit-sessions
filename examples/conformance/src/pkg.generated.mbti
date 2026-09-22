@@ -1,12 +1,12 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "hosi121/sql_conformance"
+package "Hosi121/sql_conformance"
 
 import {
-  "hosi121/sql",
+  "Hosi121/sql_session",
 }
 
 // Values
-pub async fn[P, R, M, O] run(@sql.Database[P, R, M, O], Case[P, R, O]) -> Unit
+pub async fn[P, R, M, O] run(@sql_session.Database[P, R, M, O], Case[P, R, O]) -> Unit
 
 // Errors
 pub(all) suberror Abort

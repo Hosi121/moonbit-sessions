@@ -14,7 +14,7 @@ async function eventually(f) {
   throw last;
 }
 before(async () => {
-  child = spawn('_build/native/release/build/hosi121/ws_session_example/ws_session_example.exe', [], {
+  child = spawn('_build/native/release/build/Hosi121/ws_session_example/ws_session_example.exe', [], {
     env: nativeEnv(), stdio: ['ignore', 'pipe', 'pipe'],
   });
   child.stdout.on('data', text => logs += text);

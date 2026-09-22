@@ -27,9 +27,9 @@ const mode = process.argv[2];
 if (mode === 'check') {
   moon('check', '--target', 'native');
   moon('info', '--target', 'native');
-  for (const dir of ['sql/src', 'mysql/src', 'postgres/src', 'ws_session/src']) audit(dir);
+  for (const dir of ['sql_session/src', 'mysql/src', 'postgres_session/src', 'moondb_session/src', 'ws_session/src']) audit(dir);
 } else if (mode === 'test') {
-  moon('test', '--target', 'native', 'sql/src');
+  moon('test', '--target', 'native', 'sql_session/src', 'moondb_session/src');
   moon('build', '--target', 'native', '--release', 'examples/websocket/src');
   run(process.execPath, ['--test', '--test-timeout=15000', 'tests/websocket.test.mjs']);
 } else if (mode === 'mysql') {
@@ -38,19 +38,19 @@ if (mode === 'check') {
   const url = new URL(value);
   if (url.protocol !== 'mysql:' || !url.hostname || url.pathname.length < 2) throw new Error('Invalid MySQL test configuration');
   moon('build', '--target', 'native', '--release', 'examples/mysql/src');
-  run('_build/native/release/build/hosi121/mysql_example/mysql_example.exe', [], {
+  run('_build/native/release/build/Hosi121/mysql_example/mysql_example.exe', [], {
     timeout: 30000,
     env: { ...env, SERVICEKIT_MYSQL_HOST: url.hostname, SERVICEKIT_MYSQL_PORT: url.port || '3306',
       SERVICEKIT_MYSQL_USER: decodeURIComponent(url.username), SERVICEKIT_MYSQL_PASSWORD: decodeURIComponent(url.password),
       SERVICEKIT_MYSQL_DATABASE: decodeURIComponent(url.pathname.slice(1)) },
   });
-} else if (mode === 'postgres') {
+} else if (mode === 'postgres' || mode === 'moondb') {
   const value = process.env.SERVICEKIT_TEST_POSTGRES_URL;
   if (!value) throw new Error('Set SERVICEKIT_TEST_POSTGRES_URL to a disposable PostgreSQL database.');
   const url = new URL(value);
   if (url.protocol !== 'postgres:' || !url.hostname || url.pathname.length < 2) throw new Error('Invalid PostgreSQL test configuration');
-  moon('build', '--target', 'native', '--release', 'examples/postgres/src');
-  run('_build/native/release/build/hosi121/postgres_example/postgres_example.exe', [], {
+  moon('build', '--target', 'native', '--release', `examples/${mode}/src`);
+  run(`_build/native/release/build/Hosi121/${mode}_example/${mode}_example.exe`, [], {
     timeout: 30000,
     env: { ...env, SERVICEKIT_POSTGRES_HOST: url.hostname, SERVICEKIT_POSTGRES_PORT: url.port || '5432',
       SERVICEKIT_POSTGRES_USER: decodeURIComponent(url.username), SERVICEKIT_POSTGRES_PASSWORD: decodeURIComponent(url.password),
@@ -58,24 +58,25 @@ if (mode === 'check') {
   });
 } else if (mode === 'consumer') {
   // Each application builds with only its own dependency, outside this checkout.
-  for (const [library, example] of [['mysql', 'mysql'], ['postgres', 'postgres'], ['ws_session', 'websocket']]) {
+  for (const [library, example] of [['mysql', 'mysql'], ['postgres_session', 'postgres'], ['moondb_session', 'moondb'], ['ws_session', 'websocket']]) {
     const dir = mkdtempSync(join(tmpdir(), 'servicekit-consumer-'));
     try {
       cpSync(library, join(dir, 'library'), { recursive: true });
       cpSync(`examples/${example}`, join(dir, 'consumer'), { recursive: true });
       const members = ['library', 'consumer'];
       if (library !== 'ws_session') {
-        cpSync('sql', join(dir, 'sql'), { recursive: true });
+        cpSync('sql_session', join(dir, 'sql'), { recursive: true });
         cpSync('examples/conformance', join(dir, 'conformance'), { recursive: true });
         members.push('sql', 'conformance');
       }
       writeFileSync(join(dir, 'moon.work'), `members = ${JSON.stringify(members)}\n`);
       run(process.execPath, ['scripts/moon.mjs', '-C', dir, 'build', '--target', 'native', '--release']);
       if (library !== 'mysql') {
-        const binary = join(dir, `_build/native/release/build/hosi121/${library === 'postgres' ? 'postgres' : 'ws_session'}_example/${library === 'postgres' ? 'postgres' : 'ws_session'}_example.exe`);
+        const module = example === 'websocket' ? 'ws_session' : example;
+        const binary = join(dir, `_build/native/release/build/Hosi121/${module}_example/${module}_example.exe`);
         const linked = spawnSync('ldd', [binary], { env, encoding: 'utf8' });
         if (linked.status !== 0 || /libmariadb|libmysqlclient/.test(linked.stdout)) throw new Error('Non-MySQL consumer must not link MySQL');
       }
     } finally { rmSync(dir, { recursive: true, force: true }); }
   }
-} else throw new Error('Expected check, test, mysql, postgres, or consumer');
+} else throw new Error('Expected check, test, mysql, postgres, moondb, or consumer');

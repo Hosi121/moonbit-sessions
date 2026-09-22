@@ -1,14 +1,13 @@
-# hosi121/ws_session
+# Hosi121/ws_session
 
 Scoped **text** WebSocket sending for native `moonbitlang/async@0.22.1` connections.
 The module adds bounded pending messages, one data writer, optional heartbeat,
 and final-payload/close-frame ordering. It does not implement a WebSocket parser,
 HTTP upgrade, receive protocol, registry, identity, authentication, or room model.
 
-Use `"hosi121/ws_session@0.1.0"` in `moon.mod` and
-`"hosi121/ws_session" @session` in `moon.pkg`. Register this directory in the
-workspace as described in the [repository README](../README.md). It is not yet
-on Mooncakes. No MySQL headers, library, or module dependency is needed.
+Use `"Hosi121/ws_session@0.1.0"` in `moon.mod` and
+`"Hosi121/ws_session" @session` in `moon.pkg`. After registry publication, install with
+`moon add Hosi121/ws_session`. Apache-2.0. No MySQL headers, library, or module dependency is needed.
 
 After upgrading with `moonbitlang/async/websocket`:
 
@@ -20,7 +19,7 @@ let limits = @session.Limits(max_pending_bytes=65536, max_pending_messages=128)
 ```
 
 The caller owns the underlying transport and must close it after return (for an
-HTTP server, `defer conn.close()`). See the [runnable server](../examples/websocket)
+HTTP server, `defer conn.close()`). See the [runnable server](https://github.com/Hosi121/moonbit-sessions/tree/main/examples/websocket)
 for receiving, ingress size policy, and the async 0.22.1 HTTP close-drain workaround.
 Those caller-owned concerns are intentionally outside this module.
 

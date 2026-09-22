@@ -1,4 +1,4 @@
-# hosi121/postgres
+# Hosi121/postgres_session
 
 Native adapter for `moonbit-community/postgres@0.0.8`, reusing its async protocol
 client and `pgpool`. There is no libpq dependency, foreign worker or extra pool.
@@ -6,19 +6,19 @@ Tested with PostgreSQL 17 and the repository's pinned MoonBit toolchain.
 
 ## Install and use
 
-Register `vendor/servicekit/sql` and `vendor/servicekit/postgres` in `moon.work`.
+Apache-2.0. After registry publication: `moon add Hosi121/postgres_session`.
 Your `moon.mod` imports:
 
 ```moonbit
 import {
-  "hosi121/sql@0.1.0",
-  "hosi121/postgres@0.1.0",
+  "Hosi121/sql_session@0.1.0",
+  "Hosi121/postgres_session@0.1.0",
   "moonbit-community/postgres@0.0.8",
   "moonbitlang/async@0.22.1",
 }
 ```
 
-Import `"hosi121/postgres" @postgres`,
+Import `"Hosi121/postgres_session" @postgres`,
 `"moonbit-community/postgres/client" @client`, and
 `"moonbit-community/postgres/pgpool" @pgpool` in the consumer package.
 Inside an async function:
@@ -71,10 +71,10 @@ Results default to 10,000 rows and 16 MiB value bytes, configurable with
 `max_rows`/`max_bytes`. These are collected-result limits, **not a hard cap on
 upstream protocol buffers, individual incoming messages, or peak process memory**.
 Over-limit streams drain before the connection is discarded. Checkout defaults
-to 5 seconds and 128 waiters. See the [shared SQL contract](../sql/README.md).
+to 5 seconds and 128 waiters. See the [shared SQL contract](https://github.com/Hosi121/moonbit-sessions/blob/main/sql_session/README.md).
 
 The new registry dependency also pulls `moonbitlang/x@0.4.41` and
 `tonyfettes/unicode@0.3.0`; async remains 0.22.1. No npm dependency was added.
-The [consumer](../examples/postgres/src/main.mbt) and CI exercise a real database,
+The [consumer](https://github.com/Hosi121/moonbit-sessions/blob/main/examples/postgres/src/main.mbt) and CI exercise a real database,
 exact values, RETURNING, cleanup, result limits and the shared conformance suite.
 TLS/failover configurations are not integration-tested here.

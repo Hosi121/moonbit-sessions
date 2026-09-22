@@ -1,0 +1,5 @@
+Copyright 2026 Hosi121
+Licensed under the Apache License, Version 2.0.
+
+Native MySQL and WebSocket code originated in Hosi121/SpeakUp-moonbit.
+Upstream dependencies retain their own licenses and are not vendored here.
